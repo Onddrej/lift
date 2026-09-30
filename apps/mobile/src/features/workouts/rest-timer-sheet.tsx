@@ -1,23 +1,17 @@
+import { Ionicons } from '@expo/vector-icons';
 import { formatDuration } from '@lift/shared';
 import { useState } from 'react';
-import { Modal, Pressable, StyleSheet, View } from 'react-native';
+import { Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
 import Animated, { useAnimatedProps } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Circle } from 'react-native-svg';
 
-import { Button, Chip, PressableScale, Text, useSheetLayout } from '@/components/ui';
+import { Button, Chip, PressableScale, Text } from '@/components/ui';
 import { haptics } from '@/features/feedback/haptics';
 import { useTicker } from '@/hooks/use-ticker';
 import { useSettings } from '@/store/settings';
 import { readRest, useTimer } from '@/store/timer';
-import {
-  fontSize,
-  HIT_SLOP,
-  MIN_TOUCH_SIZE,
-  PRESS_SCALE_SMALL,
-  radius,
-  spacing,
-  useColors,
-} from '@/theme';
+import { HIT_SLOP, PRESS_SCALE_SMALL, radius, spacing, useColors } from '@/theme';
 
 import {
   ADJUST_SECONDS,
@@ -30,36 +24,63 @@ import {
 /*
  * The ring, in viewBox units rather than points.
  *
- * The SVG is laid out at `width="100%"` inside a square box, so every number
- * below is a proportion of whatever width the sheet ends up with: the ring and
- * its stroke scale together from a 320pt phone to a tablet without a second set
- * of measurements. A fixed pixel size would have to be either too small on the
- * large screens or wider than the small ones.
+ * The SVG is laid out at the pixel size computed in the component, so every
+ * number below is a proportion of that size: the stroke scales with the ring
+ * from a short phone to a tablet without a second set of measurements.
  */
 const RING_VIEWBOX = 100;
-const RING_STROKE = 7;
+const RING_STROKE = 6;
 const RING_RADIUS = (RING_VIEWBOX - RING_STROKE) / 2;
 const RING_CENTER = RING_VIEWBOX / 2;
 const RING_CIRCUMFERENCE = 2 * Math.PI * RING_RADIUS;
 
 /**
  * Past this the ring stops being a dial and starts being a hole in the sheet.
- * It only binds on tablets; every phone hits the row's width first.
+ * Only binds on a dialog: a phone runs out of width first.
  */
-const RING_MAX_SIZE = 240;
+const RING_MAX_SIZE = 280;
 
 /**
- * The `±` targets, deliberately larger than the 44 minimum.
+ * The most of the window's height the ring may take.
  *
- * These are pressed with the phone held at arm's length, or on the floor, by
- * someone mid-set. The bar's controls are 44 because a docked row has no height
- * to spare; the sheet does.
+ * The sheet stacks a header, the ring, a row of adjusters and a row of actions,
+ * and the ring is the only part that can give. Without the cap a short window
+ * (a small phone, a browser tab) pushes the actions off the bottom.
  */
-const ADJUST_SIZE = MIN_TOUCH_SIZE + spacing.md;
+const RING_HEIGHT_SHARE = 0.34;
+
+/** The readout's size as a fraction of the ring's, which is what keeps it inside. */
+const READOUT_SHARE = 0.27;
+
+/**
+ * Below this window width the sheet is docked to the bottom edge at full width,
+ * the shape it has on every phone. At and above it the sheet floats in the
+ * middle as a dialog, because a 600pt-wide bar of buttons is not a sheet.
+ */
+const DIALOG_MIN_WINDOW = 600;
+const DIALOG_MAX_WIDTH = 440;
+
+const CARD_PADDING = spacing.xxl;
+
+/**
+ * The `±` targets: full-width buttons, not the two small discs they used to be.
+ * They are pressed with the phone held at arm's length, or on the floor, by
+ * someone mid-set.
+ */
+const ADJUST_HEIGHT = 54;
 
 /** The same range the rest-duration editor allows, for the same reasons. */
 const MIN_DRAFT_SECONDS = 5;
 const MAX_DRAFT_SECONDS = 3600;
+
+/**
+ * The durations offered before a rest is started.
+ *
+ * Only shown while idle. Once a clock is running the two `±15` buttons are the
+ * way to change it, and a row of absolute values would have to mean "restart at
+ * this length", which is a different action nobody asked for mid-rest.
+ */
+const PRESET_SECONDS = [30, 60, 90, 120, 180] as const;
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -89,8 +110,9 @@ export function RestTimerSheet({
   onEditRest,
 }: RestTimerSheetProps) {
   const colors = useColors();
-  const sheetLayout = useSheetLayout();
   const controls = useRestControls();
+  const insets = useSafeAreaInsets();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
 
   const restEndsAt = useTimer((state) => state.restEndsAt);
   const restPausedSeconds = useTimer((state) => state.restPausedSeconds);
@@ -148,6 +170,19 @@ export function RestTimerSheet({
   const readout = frame?.readout ?? formatDuration(draft);
   const readoutLabel = frame?.readoutLabel ?? `${spokenDuration(draft)} rest, not started`;
   const status = frame?.status ?? 'Rest timer';
+  const subtitle = restExerciseName ?? (idle ? 'Ready' : null);
+
+  // What the readout is a share of, for the line under it. Nothing once the
+  // bell has rung: the figure is then time *past* the span, and "of 1:30" under
+  // "+0:12" would read as a fraction of something.
+  const span = rest !== null && !rest.finished ? `of ${formatDuration(restTotalSeconds)}` : null;
+
+  const docked = windowWidth < DIALOG_MIN_WINDOW;
+  const cardWidth = docked ? windowWidth : Math.min(DIALOG_MAX_WIDTH, windowWidth - spacing.xxl * 2);
+  const ringSize = Math.floor(
+    Math.min(RING_MAX_SIZE, cardWidth - CARD_PADDING * 2, windowHeight * RING_HEIGHT_SHARE),
+  );
+  const readoutSize = Math.round(ringSize * READOUT_SHARE);
 
   const adjust = (delta: number) => {
     if (idle) {
@@ -165,7 +200,17 @@ export function RestTimerSheet({
   };
 
   return (
-    <Modal visible={visible} transparent animationType="fade" onRequestClose={onClose}>
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      // Both, or neither: Android honours the navigation bar flag only alongside
+      // the status bar one. With them the dimmed backdrop reaches the screen's
+      // edges and the card can account for the gesture area itself, below.
+      statusBarTranslucent
+      navigationBarTranslucent
+    >
       {/*
         `accessible={false}` on both Pressables, deliberately.
 
@@ -173,12 +218,16 @@ export function RestTimerSheet({
         into one element. The backdrop would announce the whole sheet as a
         single button reading "Rest 1:30 minus 15 plus 15 Skip Pause", and none
         of the controls inside it could be reached. Tap-outside-to-dismiss has no
-        screen reader equivalent here on purpose: the ghost button is one swipe
+        screen reader equivalent here on purpose: the close button is one swipe
         away, and Android's back gesture already routes to `onRequestClose`.
       */}
       <Pressable
         accessible={false}
-        style={[styles.backdrop, { backgroundColor: colors.overlay }, sheetLayout.backdrop]}
+        style={[
+          styles.backdrop,
+          docked ? styles.backdropDocked : styles.backdropDialog,
+          { backgroundColor: colors.overlay },
+        ]}
         onPress={onClose}
       >
         {/* Swallows taps inside the card so they don't dismiss the sheet. */}
@@ -190,26 +239,21 @@ export function RestTimerSheet({
           accessibilityViewIsModal
           style={[
             styles.card,
+            docked ? styles.cardDocked : styles.cardDialog,
             {
               backgroundColor: colors.surfaceElevated,
               // Docked to the bottom edge, the buttons would otherwise sit under
-              // the gesture pill. Centred, there is no pill to clear.
-              paddingBottom: spacing.xl + sheetLayout.bottomInset,
+              // the gesture pill. Floating, there is no pill to clear.
+              paddingBottom: spacing.xl + (docked ? insets.bottom : 0),
             },
-            sheetLayout.sheet,
           ]}
           onPress={(event) => event.stopPropagation()}
         >
           {/* Decoration, not a control: this sheet is not draggable, and the
               grabber is here because a card against the bottom edge without one
-              reads as stuck rather than dismissible. 36 × 4 is the size iOS
-              draws its own.
-
-              It goes when the card stops touching that edge. A grabber on a
-              floating dialog is a handle for a drag that is not offered, in the
-              middle of a window, pointing at nothing. The affordance it exists
-              to supply is the one thing a centred dialog does not need. */}
-          {!sheetLayout.sheet && (
+              reads as stuck rather than dismissible. It goes when the card stops
+              touching that edge. */}
+          {docked && (
             <View
               style={[styles.grabber, { backgroundColor: colors.borderStrong }]}
               pointerEvents="none"
@@ -221,9 +265,9 @@ export function RestTimerSheet({
               <Text variant="overline" style={{ color: tone }} numberOfLines={1}>
                 {status}
               </Text>
-              {restExerciseName ? (
-                <Text variant="label" color="textTertiary" numberOfLines={1}>
-                  {restExerciseName}
+              {subtitle ? (
+                <Text variant="bodyMedium" color="textSecondary" numberOfLines={1}>
+                  {subtitle}
                 </Text>
               ) : null}
             </View>
@@ -231,109 +275,121 @@ export function RestTimerSheet({
             {onEditRest !== undefined && targetSeconds != null && (
               <Chip
                 label={formatDuration(targetSeconds)}
-                icon="timer-outline"
+                icon="pencil"
                 onPress={onEditRest}
                 // A chip is 36 tall, and it is the only pressable thing in this
-                // row: nothing for its slop to contest, and the ring's controls
-                // are a full `spacing.lg` below.
+                // row: nothing for its slop to contest.
                 hitSlop={HIT_SLOP}
                 accessibilityLabel={`Rest duration, ${spokenDuration(targetSeconds)}. Edit`}
               />
             )}
           </View>
 
-          <View style={styles.ringRow}>
-            <PressableScale
-              onPress={() => adjust(-ADJUST_SECONDS)}
-              accessibilityRole="button"
-              accessibilityLabel={
+          <View style={{ width: ringSize, height: ringSize, alignSelf: 'center' }}>
+            <Svg width="100%" height="100%" viewBox={`0 0 ${RING_VIEWBOX} ${RING_VIEWBOX}`}>
+              <Circle
+                cx={RING_CENTER}
+                cy={RING_CENTER}
+                r={RING_RADIUS}
+                fill="none"
+                stroke={colors.surfaceMuted}
+                strokeWidth={RING_STROKE}
+              />
+              <AnimatedCircle
+                cx={RING_CENTER}
+                cy={RING_CENTER}
+                r={RING_RADIUS}
+                fill="none"
+                // Idle holds the ring full (`idleValue` above), so it is drawn
+                // in a hairline-quiet stroke: a bright full circle would say
+                // "running".
+                stroke={idle ? colors.borderStrong : tone}
+                strokeWidth={RING_STROKE}
+                strokeLinecap="round"
+                strokeDasharray={RING_CIRCUMFERENCE}
+                /*
+                 * An SVG circle starts at three o'clock, and a countdown that
+                 * begins anywhere but the top is a dial nobody can read at a
+                 * glance. Stated in SVG's own transform syntax with the centre
+                 * named explicitly: a `transform` in the React Native `style`
+                 * of the `Svg` element looks equivalent and is not: the
+                 * library lifts it out of the style and re-applies it in SVG
+                 * space, where the default origin is the corner of the viewBox
+                 * rather than the middle of the shape.
+                 */
+                transform={`rotate(-90 ${RING_CENTER} ${RING_CENTER})`}
+                animatedProps={ringProps}
+              />
+            </Svg>
+
+            <View
+              style={[styles.ringCenter, { paddingHorizontal: ringSize * 0.12 }]}
+              pointerEvents="none"
+            >
+              <Text
+                variant="numericLarge"
+                numberOfLines={1}
+                // "+1:05" is wider than "1:30", and the ring is the shape that
+                // carries the state, so the figure gives way rather than the
+                // ring.
+                adjustsFontSizeToFit
+                minimumFontScale={0.6}
+                accessibilityLabel={readoutLabel}
+                style={[
+                  styles.readout,
+                  { color: tone, fontSize: readoutSize, lineHeight: Math.round(readoutSize * 1.1) },
+                ]}
+              >
+                {readout}
+              </Text>
+              {span !== null && (
+                <Text variant="label" color="textTertiary" style={styles.span}>
+                  {span}
+                </Text>
+              )}
+            </View>
+          </View>
+
+          {idle && (
+            <View style={styles.presets} accessibilityRole="radiogroup">
+              {PRESET_SECONDS.map((seconds) => (
+                <Chip
+                  key={seconds}
+                  label={formatDuration(seconds)}
+                  selected={draft === seconds}
+                  onPress={() => {
+                    haptics.selection();
+                    setDraft(seconds);
+                  }}
+                  accessibilityRole="radio"
+                  accessibilityState={{ selected: draft === seconds }}
+                  accessibilityLabel={`${spokenDuration(seconds)} rest`}
+                />
+              ))}
+            </View>
+          )}
+
+          <View style={styles.adjustRow}>
+            <AdjustButton
+              icon="remove"
+              seconds={ADJUST_SECONDS}
+              label={
                 idle
                   ? `Subtract ${ADJUST_SECONDS} seconds from the rest duration`
                   : `Subtract ${ADJUST_SECONDS} seconds`
               }
-              fill={colors.surfaceMuted}
-              fillPressed={colors.surfacePressed}
-              scaleTo={PRESS_SCALE_SMALL}
-              style={[styles.adjust, { backgroundColor: colors.surfaceMuted }]}
-            >
-              <Text variant="label" color="textSecondary">
-                −{ADJUST_SECONDS}s
-              </Text>
-            </PressableScale>
-
-            <View style={styles.ring}>
-              <Svg width="100%" height="100%" viewBox={`0 0 ${RING_VIEWBOX} ${RING_VIEWBOX}`}>
-                <Circle
-                  cx={RING_CENTER}
-                  cy={RING_CENTER}
-                  r={RING_RADIUS}
-                  fill="none"
-                  stroke={colors.surfaceMuted}
-                  strokeWidth={RING_STROKE}
-                />
-                <AnimatedCircle
-                  cx={RING_CENTER}
-                  cy={RING_CENTER}
-                  r={RING_RADIUS}
-                  fill="none"
-                  stroke={tone}
-                  strokeWidth={RING_STROKE}
-                  strokeLinecap="round"
-                  strokeDasharray={RING_CIRCUMFERENCE}
-                  /*
-                   * An SVG circle starts at three o'clock, and a countdown that
-                   * begins anywhere but the top is a dial nobody can read at a
-                   * glance. Stated in SVG's own transform syntax with the centre
-                   * named explicitly: a `transform` in the React Native `style`
-                   * of the `Svg` element looks equivalent and is not: the
-                   * library lifts it out of the style and re-applies it in SVG
-                   * space, where the default origin is the corner of the viewBox
-                   * rather than the middle of the shape.
-                   */
-                  transform={`rotate(-90 ${RING_CENTER} ${RING_CENTER})`}
-                  animatedProps={ringProps}
-                />
-              </Svg>
-
-              <View style={styles.ringCenter} pointerEvents="none">
-                {/* The second of the app's two deliberately large figures: the
-                    same argument as the docked bar's readout, one step further
-                    up because here the number is the entire content of the
-                    surface rather than one item in a row. */}
-                <Text
-                  variant="numericLarge"
-                  numberOfLines={1}
-                  // The ring is sized from whatever width the row leaves, so on
-                  // a narrow phone it lands near 150pt, and a 40px "+1:05"
-                  // needs more than that. The figure gives way rather than the
-                  // ring, which is the shape that carries the state.
-                  adjustsFontSizeToFit
-                  minimumFontScale={0.6}
-                  accessibilityLabel={readoutLabel}
-                  style={[styles.readout, { color: tone }]}
-                >
-                  {readout}
-                </Text>
-              </View>
-            </View>
-
-            <PressableScale
-              onPress={() => adjust(ADJUST_SECONDS)}
-              accessibilityRole="button"
-              accessibilityLabel={
+              onPress={() => adjust(-ADJUST_SECONDS)}
+            />
+            <AdjustButton
+              icon="add"
+              seconds={ADJUST_SECONDS}
+              label={
                 idle
                   ? `Add ${ADJUST_SECONDS} seconds to the rest duration`
                   : `Add ${ADJUST_SECONDS} seconds`
               }
-              fill={colors.surfaceMuted}
-              fillPressed={colors.surfacePressed}
-              scaleTo={PRESS_SCALE_SMALL}
-              style={[styles.adjust, { backgroundColor: colors.surfaceMuted }]}
-            >
-              <Text variant="label" color="textSecondary">
-                +{ADJUST_SECONDS}s
-              </Text>
-            </PressableScale>
+              onPress={() => adjust(ADJUST_SECONDS)}
+            />
           </View>
 
           {/*
@@ -341,42 +397,51 @@ export function RestTimerSheet({
             pair changes what it says: Close/Start before a rest, Skip/Pause
             during one, Close/Done after the bell, but a control that appears
             and disappears under a thumb is the mis-tap this whole rebuild was
-            about.
+            about. The main action is the wider one, on the right, where the
+            thumb already is.
 
-            There is nothing left to skip once the bell has rung, so the ghost
-            stops offering it and goes back to being a way out that leaves the
-            finished timer where it is. Two buttons that both mean "dismiss"
-            would be one of them lying about doing something else.
+            There is nothing left to skip once the bell has rung, so the left
+            button stops offering it and goes back to being a way out that
+            leaves the finished timer where it is. Two buttons that both mean
+            "dismiss" would be one of them lying about doing something else.
           */}
           <View style={styles.actions}>
             <Button
               title={leaveOnly ? 'Close' : 'Skip'}
-              variant="ghost"
+              variant="outline"
+              size="lg"
+              icon={leaveOnly ? undefined : 'play-skip-forward'}
               accessibilityLabel={leaveOnly ? 'Close the rest timer' : 'Skip rest'}
               onPress={leaveOnly ? onClose : skip}
-              style={styles.action}
+              style={styles.secondaryAction}
             />
 
             {idle ? (
               <Button
                 title="Start"
+                size="lg"
+                icon="play"
                 accessibilityLabel={`Start a ${spokenDuration(draft)} rest`}
                 onPress={() => controls.start(draft)}
-                style={styles.action}
+                style={styles.primaryAction}
               />
             ) : frame.finished ? (
               <Button
                 title="Done"
+                size="lg"
+                icon="checkmark"
                 accessibilityLabel="Dismiss the finished rest timer"
                 onPress={skip}
-                style={styles.action}
+                style={styles.primaryAction}
               />
             ) : (
               <Button
                 title={frame.paused ? 'Resume' : 'Pause'}
+                size="lg"
+                icon={frame.paused ? 'play' : 'pause'}
                 accessibilityLabel={frame.paused ? 'Resume rest' : 'Pause rest'}
                 onPress={controls.togglePause}
-                style={styles.action}
+                style={styles.primaryAction}
               />
             )}
           </View>
@@ -386,18 +451,57 @@ export function RestTimerSheet({
   );
 }
 
+function AdjustButton({
+  icon,
+  seconds,
+  label,
+  onPress,
+}: {
+  icon: 'add' | 'remove';
+  seconds: number;
+  label: string;
+  onPress: () => void;
+}) {
+  const colors = useColors();
+
+  return (
+    <PressableScale
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      fill={colors.surfaceMuted}
+      fillPressed={colors.surfacePressed}
+      scaleTo={PRESS_SCALE_SMALL}
+      style={[styles.adjust, { backgroundColor: colors.surfaceMuted }]}
+    >
+      <Ionicons name={icon} size={18} color={colors.text} />
+      <Text variant="bodyMedium">{seconds}s</Text>
+    </PressableScale>
+  );
+}
+
 function clampDraft(seconds: number): number {
   return Math.min(MAX_DRAFT_SECONDS, Math.max(MIN_DRAFT_SECONDS, Math.round(seconds)));
 }
 
 const styles = StyleSheet.create({
-  backdrop: { flex: 1, justifyContent: 'flex-end' },
+  backdrop: { flex: 1 },
+  backdropDocked: { justifyContent: 'flex-end' },
+  backdropDialog: { alignItems: 'center', justifyContent: 'center', padding: spacing.xxl },
   card: {
-    borderTopLeftRadius: radius.xl,
-    borderTopRightRadius: radius.xl,
-    paddingHorizontal: spacing.xl,
+    paddingHorizontal: CARD_PADDING,
     paddingTop: spacing.md,
     gap: spacing.lg,
+  },
+  cardDocked: {
+    borderTopLeftRadius: radius.xl,
+    borderTopRightRadius: radius.xl,
+  },
+  cardDialog: {
+    width: '100%',
+    maxWidth: DIALOG_MAX_WIDTH,
+    borderRadius: radius.xl,
+    paddingTop: spacing.xl,
   },
   grabber: {
     width: 36,
@@ -412,25 +516,6 @@ const styles = StyleSheet.create({
     gap: spacing.sm,
   },
   status: { flex: 1, gap: 2 },
-  ringRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'center',
-    gap: spacing.md,
-  },
-  /**
-   * `flex: 1` with a square aspect, so the ring takes whatever the two controls
-   * leave and its height follows. The one measurement the sheet does not have
-   * to state, and therefore the one that cannot be wrong on a screen size nobody
-   * tested.
-   */
-  ring: {
-    flex: 1,
-    aspectRatio: 1,
-    maxWidth: RING_MAX_SIZE,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
   // Inset from the ring's own bounds, because that is the box the readout is
   // shrunk to fit: at full width the figure would be sized to touch the stroke
   // on both sides, which is the one place a countdown must not land.
@@ -440,18 +525,30 @@ const styles = StyleSheet.create({
     right: 0,
     bottom: 0,
     left: 0,
-    paddingHorizontal: spacing.lg,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  readout: { fontSize: fontSize.display, letterSpacing: -0.6 },
+  readout: { letterSpacing: -1 },
+  span: { marginTop: spacing.xs },
+  presets: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'center',
+    // Five chips are ~320pt wide with the smallest gap, and a 360pt phone leaves
+    // ~312: the gap is the one thing that can give before they wrap.
+    gap: spacing.xs,
+  },
+  adjustRow: { flexDirection: 'row', gap: spacing.md },
   adjust: {
-    width: ADJUST_SIZE,
-    height: ADJUST_SIZE,
+    flex: 1,
+    height: ADJUST_HEIGHT,
+    flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    borderRadius: radius.pill,
+    gap: spacing.xs,
+    borderRadius: radius.lg,
   },
-  actions: { flexDirection: 'row', gap: spacing.sm },
-  action: { flex: 1 },
+  actions: { flexDirection: 'row', gap: spacing.md },
+  secondaryAction: { flex: 1 },
+  primaryAction: { flex: 1.6 },
 });
