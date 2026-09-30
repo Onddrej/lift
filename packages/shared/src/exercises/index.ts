@@ -73,4 +73,5 @@ export function findDuplicateExerciseIds(): string[] {
 }
 
 export * from './matching.ts';
+export * from './photo.ts';
 export * from './ranking.ts';

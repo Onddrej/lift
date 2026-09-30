@@ -25,7 +25,16 @@ import {
 } from '@/components/ui';
 import { db } from '@/db/client';
 import { exercises } from '@/db/schema';
+import { ExercisePhotoField } from '@/features/exercises/exercise-photo-field';
+import { ExercisePhotoSheet } from '@/features/exercises/exercise-photo-sheet';
+import {
+  deleteExercisePhoto,
+  EXERCISE_PHOTOS_SUPPORTED,
+  saveExercisePhoto,
+  type PhotoSource,
+} from '@/features/exercises/photo-store';
 import { createCustomExercise } from '@/features/exercises/repository';
+import { useExercisePhotoPicker } from '@/features/exercises/use-exercise-photo-picker';
 import { showAlert } from '@/store/dialog';
 import { spacing } from '@/theme';
 
@@ -70,6 +79,17 @@ export default function NewExerciseScreen() {
   const [trackingType, setTrackingType] = useState<TrackingType>('weight_reps');
   const [saving, setSaving] = useState(false);
 
+  /*
+   * The picture as the picker handed it over, not yet the app's own.
+   *
+   * It stays in the picker's cache until the exercise is saved. Copying it into
+   * storage the moment it is chosen would leave a file behind every time
+   * someone picks a photo and then backs out of the form, with no row anywhere
+   * that knows to delete it.
+   */
+  const [photo, setPhoto] = useState<PhotoSource | null>(null);
+  const photoPicker = useExercisePhotoPicker(setPhoto);
+
   const nameField = useRef<TextInput>(null);
 
   /** Returns the reason the name is unusable, or null. */
@@ -105,10 +125,16 @@ export default function NewExerciseScreen() {
       return;
     }
 
+    // Written before the row, so the row never names a file that is not there.
+    // If the insert then fails, the file is the thing to take back.
+    let imageUrl: string | null = null;
+
     try {
-      await createCustomExercise({ name, equipment, primaryMuscle, trackingType });
+      if (photo) imageUrl = await saveExercisePhoto(photo);
+      await createCustomExercise({ name, equipment, primaryMuscle, trackingType, imageUrl });
       router.back();
     } catch (error) {
+      deleteExercisePhoto(imageUrl);
       // Only a write that actually failed reaches here: a full disk, a locked
       // database. There is no field to hang that on, so it stays a dialog.
       void showAlert('Could not save', (error as Error).message);
@@ -142,6 +168,10 @@ export default function NewExerciseScreen() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
+        {EXERCISE_PHOTOS_SUPPORTED && (
+          <ExercisePhotoField uri={photo?.uri ?? null} onPress={photoPicker.openSheet} />
+        )}
+
         <TextField
           ref={nameField}
           label="Name"
@@ -209,6 +239,17 @@ export default function NewExerciseScreen() {
           style={styles.submit}
         />
       </ScrollView>
+
+      <ExercisePhotoSheet
+        visible={photoPicker.sheetVisible}
+        hasPhoto={photo !== null}
+        onClose={photoPicker.closeSheet}
+        onPick={photoPicker.pick}
+        onRemove={() => {
+          setPhoto(null);
+          photoPicker.closeSheet();
+        }}
+      />
     </Screen>
   );
 }

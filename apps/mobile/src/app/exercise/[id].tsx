@@ -45,10 +45,17 @@ import {
   type WorkoutSet,
 } from '@/db/schema';
 import { ExerciseMedia } from '@/features/exercises/exercise-media';
-import { deleteExercise, getExercise } from '@/features/exercises/repository';
+import { ExercisePhotoSheet } from '@/features/exercises/exercise-photo-sheet';
+import {
+  deleteExercisePhoto,
+  EXERCISE_PHOTOS_SUPPORTED,
+  saveExercisePhoto,
+} from '@/features/exercises/photo-store';
+import { deleteExercise, getExercise, setExercisePhoto } from '@/features/exercises/repository';
+import { useExercisePhotoPicker } from '@/features/exercises/use-exercise-photo-picker';
 import { useExerciseUnits } from '@/features/exercises/units';
 import { ExerciseSetList } from '@/features/workouts/exercise-set-list';
-import { showConfirm } from '@/store/dialog';
+import { showAlert, showConfirm } from '@/store/dialog';
 import { useSettings } from '@/store/settings';
 import { spacing, useColors, useContentWidth } from '@/theme';
 
@@ -222,6 +229,36 @@ export default function ExerciseDetailScreen() {
     };
   }, [id]);
 
+  /*
+   * Saved the moment it is picked: there is no Save button on this screen to
+   * hold it for. The file is written first and the row second, and the local
+   * copy of the row is patched rather than re-read. This screen loads its
+   * exercise once, and nothing else about it changed.
+   */
+  const applyPhoto = async (stored: string | null) => {
+    await setExercisePhoto(id, stored);
+    setExercise((current) => (current ? { ...current, imageUrl: stored } : current));
+  };
+
+  const photoPicker = useExercisePhotoPicker(async (picked) => {
+    const stored = await saveExercisePhoto(picked);
+
+    try {
+      await applyPhoto(stored);
+    } catch (error) {
+      // The row never took it, so nothing points at the file just written.
+      deleteExercisePhoto(stored);
+      throw error;
+    }
+  });
+
+  const removePhoto = () => {
+    photoPicker.closeSheet();
+    applyPhoto(null).catch((error: Error) => {
+      void showAlert('Could not remove photo', error.message);
+    });
+  };
+
   // Above the loading guard, because hooks cannot be conditional.
   const trend = useMemo(() => {
     if (!exercise) return null;
@@ -312,9 +349,16 @@ export default function ExerciseDetailScreen() {
           contentContainerStyle={styles.content}
         >
           <ExerciseMedia
+            // Remounted when the photo changes. The panel takes its shape from
+            // the first picture it measures and keeps it, which is right while
+            // that picture stays put and wrong once a square photograph
+            // replaces the catalog's 4:3 artwork underneath it.
+            key={exercise.imageUrl ?? 'catalog'}
             name={exercise.name}
             thumbnailUrl={exercise.thumbnailUrl}
             videoUrl={exercise.videoUrl}
+            photo={exercise.imageUrl}
+            onEditPhoto={EXERCISE_PHOTOS_SUPPORTED ? photoPicker.openSheet : undefined}
           />
 
           {/*
@@ -445,6 +489,7 @@ export default function ExerciseDetailScreen() {
                 <ExerciseSetList
                   name={exercise.name}
                   thumbnailUrl={exercise.thumbnailUrl}
+                  photo={exercise.imageUrl}
                   sets={entry.sets}
                   weightUnit={weightUnit}
                   distanceUnit={distanceUnit}
@@ -454,6 +499,14 @@ export default function ExerciseDetailScreen() {
           )}
         </ScrollView>
       )}
+
+      <ExercisePhotoSheet
+        visible={photoPicker.sheetVisible}
+        hasPhoto={Boolean(exercise.imageUrl)}
+        onClose={photoPicker.closeSheet}
+        onPick={photoPicker.pick}
+        onRemove={removePhoto}
+      />
     </Screen>
   );
 }

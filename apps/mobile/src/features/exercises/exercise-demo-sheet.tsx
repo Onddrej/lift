@@ -19,6 +19,8 @@ export interface ExerciseDemoSheetProps {
   name: string;
   thumbnailUrl?: string | null;
   videoUrl?: string | null;
+  /** The user's own photo, as stored. Shown as the still when there is one. */
+  photo?: string | null;
 }
 
 export function ExerciseDemoSheet({
@@ -27,6 +29,7 @@ export function ExerciseDemoSheet({
   name,
   thumbnailUrl,
   videoUrl,
+  photo,
 }: ExerciseDemoSheetProps) {
   return (
     <Sheet
@@ -40,6 +43,7 @@ export function ExerciseDemoSheet({
           name={name}
           thumbnailUrl={thumbnailUrl}
           videoUrl={videoUrl}
+          photo={photo}
           autoplay
         />
       </SheetScrollView>

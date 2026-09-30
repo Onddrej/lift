@@ -415,6 +415,7 @@ export function ExerciseBlock({
               <ExerciseThumbnail
                 name={detail.exercise.name}
                 url={detail.exercise.thumbnailUrl}
+                photo={detail.exercise.imageUrl}
                 size={THUMBNAIL_SIZE}
                 style={styles.thumbnail}
               />
@@ -423,6 +424,7 @@ export function ExerciseBlock({
             <ExerciseThumbnail
               name={detail.exercise.name}
               url={detail.exercise.thumbnailUrl}
+              photo={detail.exercise.imageUrl}
               size={THUMBNAIL_SIZE}
               style={styles.thumbnail}
             />

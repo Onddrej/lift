@@ -17,6 +17,8 @@ import { db } from '@/db/client';
 import { touch, trackDelete, trackUpsert, trackUpsertCoalesced } from '@/db/mutations';
 import { exercises, workoutExercises, workouts, type Exercise } from '@/db/schema';
 
+import { deleteExercisePhoto } from './photo-store';
+
 /**
  * The subset of an exercise a list screen renders and filters on.
  *
@@ -35,6 +37,7 @@ export type ExerciseListItem = Pick<
   | 'isCustom'
   | 'isArchived'
   | 'thumbnailUrl'
+  | 'imageUrl'
 >;
 
 /** Column selection producing `ExerciseListItem`. Pass to `db.select()`. */
@@ -47,6 +50,8 @@ export const exerciseListColumns = {
   isCustom: exercises.isCustom,
   isArchived: exercises.isArchived,
   thumbnailUrl: exercises.thumbnailUrl,
+  // The user's own photo, which the row draws in place of the catalog art.
+  imageUrl: exercises.imageUrl,
 } as const;
 
 /** Non-reactive load, for code paths outside a React render (export, sync). */
@@ -122,6 +127,8 @@ export interface CreateExerciseInput {
   trackingType: TrackingType;
   notes?: string | null;
   defaultRestSeconds?: number | null;
+  /** A path from `saveExercisePhoto`, already written to disk. */
+  imageUrl?: string | null;
 }
 
 export async function createCustomExercise(input: CreateExerciseInput): Promise<Exercise> {
@@ -135,9 +142,9 @@ export async function createCustomExercise(input: CreateExerciseInput): Promise<
     trackingType: input.trackingType,
     isCustom: true as const,
     notes: input.notes ?? null,
-    imageUrl: null,
+    imageUrl: input.imageUrl ?? null,
     // Catalog media only. A user-created exercise has no upstream artwork, so
-    // its rows fall back to the initials tile.
+    // its rows fall back to the user's photo, or to the initials tile.
     thumbnailUrl: null,
     videoUrl: null,
     isArchived: false,
@@ -223,6 +230,36 @@ export async function setExerciseUnits(
 }
 
 /**
+ * Sets or clears the user's own photo of an exercise.
+ *
+ * `stored` is what `saveExercisePhoto` returned: the file is on disk before the
+ * row ever points at it, so a crash between the two leaves an orphaned file
+ * rather than a row naming a picture that does not exist.
+ *
+ * The previous file is deleted only after the write has landed, for the same
+ * reason in the other direction.
+ *
+ * Works on built-ins too. The photo is of *this gym's* machine, and that is as
+ * true of the catalog's chest press as of one the user typed in. Like the unit
+ * override, it stays on this phone for a built-in: those rows never sync, and
+ * `seedExerciseLibrary` leaves the column alone.
+ */
+export async function setExercisePhoto(id: string, stored: string | null): Promise<void> {
+  const existing = await getExercise(id);
+  if (!existing) return;
+
+  await db
+    .update(exercises)
+    .set({ imageUrl: stored, ...touch() })
+    .where(eq(exercises.id, id));
+
+  const updated = await getExercise(id);
+  if (updated?.isCustom) await trackUpsert('exercises', updated);
+
+  if (existing.imageUrl !== stored) deleteExercisePhoto(existing.imageUrl);
+}
+
+/**
  * Removes a custom exercise.
  *
  * Built-ins are archived instead of deleted: they're part of the shipped
@@ -244,6 +281,10 @@ export async function deleteExercise(id: string): Promise<void> {
     .where(eq(exercises.id, id));
 
   await trackDelete('exercises', id, deletedAt);
+
+  // The row is a tombstone now and nothing will draw it again. History rows
+  // keep the exercise's name, not its picture.
+  deleteExercisePhoto(existing.imageUrl);
 }
 
 /** Distinct muscles and equipment present in the library, for filter chips. */

@@ -10,12 +10,23 @@ import { haptics } from '@/features/feedback/haptics';
 import { HIT_SLOP, radius, spacing, useColors } from '@/theme';
 
 import { initialsFor } from './exercise-thumbnail';
+import { exercisePhotoUri } from './photo-store';
 import { openYoutubeHowTo, youtubeHowToQuery } from './youtube';
 
 export interface ExerciseMediaProps {
   name: string;
   thumbnailUrl?: string | null;
   videoUrl?: string | null;
+  /** The user's own photo: the row's `imageUrl`, as stored. Replaces the still. */
+  photo?: string | null;
+  /**
+   * Draws the photo chip and is called when it is pressed.
+   *
+   * Left off where the panel is only being looked at (the demo sheet opened
+   * mid-set), so the control for changing the picture exists in one place: the
+   * exercise's own page.
+   */
+  onEditPhoto?: () => void;
   /**
    * Start the clip as soon as this mounts. The demo sheet sets it: the user
    * already tapped the still, and a second tap on the same picture is one too
@@ -60,10 +71,24 @@ const MAX_RATIO = 2;
  * loaded (`onLoad` for the image, `sourceLoad` for the player) and the frame
  * adopts it, clamped to the range above.
  */
-export function ExerciseMedia({ name, thumbnailUrl, videoUrl, autoplay = false }: ExerciseMediaProps) {
+export function ExerciseMedia({
+  name,
+  thumbnailUrl,
+  videoUrl,
+  photo,
+  onEditPhoto,
+  autoplay = false,
+}: ExerciseMediaProps) {
   const colors = useColors();
   const [playing, setPlaying] = useState(() => Boolean(autoplay && videoUrl));
   const [ratio, setRatio] = useState<number | null>(null);
+
+  // Same fallback as `ExerciseThumbnail`, for the same reason: the path can
+  // outlive the file. The catalog's clip stays one tap away behind the photo.
+  const photoUri = exercisePhotoUri(photo);
+  const [failedUri, setFailedUri] = useState<string | null>(null);
+  const showsPhoto = photoUri !== null && photoUri !== failedUri;
+  const stillUri = showsPhoto ? photoUri : thumbnailUrl;
 
   // Hooks cannot be conditional, so the player is always created and simply
   // holds a null source until the user asks for the clip.
@@ -105,13 +130,14 @@ export function ExerciseMedia({ name, thumbnailUrl, videoUrl, autoplay = false }
           onPress={() => setPlaying(true)}
           style={styles.fill}
         >
-          {thumbnailUrl ? (
+          {stillUri ? (
             <Image
-              source={{ uri: thumbnailUrl }}
+              source={{ uri: stillUri }}
               style={styles.fill}
               contentFit="contain"
-              cachePolicy="disk"
+              cachePolicy={showsPhoto ? 'memory' : 'disk'}
               transition={160}
+              onError={showsPhoto ? () => setFailedUri(photoUri) : undefined}
               onLoad={(event) =>
                 setRatio((current) =>
                   // Never overrides a size the clip has already reported.
@@ -141,7 +167,39 @@ export function ExerciseMedia({ name, thumbnailUrl, videoUrl, autoplay = false }
         </Pressable>
       )}
       <YoutubeHowTo name={name} />
+      {onEditPhoto && <PhotoChip hasPhoto={showsPhoto} onPress={onEditPhoto} />}
     </View>
+  );
+}
+
+/**
+ * The way to the photo sheet, on the artwork it changes.
+ *
+ * Bottom right, the opposite corner from the YouTube chip and built the same
+ * way, so the panel carries two quiet labels rather than one quiet label and a
+ * button. It says which of the two things it will do: "Add" on catalog artwork,
+ * "Change" once the picture is the user's own.
+ */
+function PhotoChip({ hasPhoto, onPress }: { hasPhoto: boolean; onPress: () => void }) {
+  const label = hasPhoto ? 'Change photo' : 'Add photo';
+
+  return (
+    <Pressable
+      onPress={() => {
+        haptics.selection();
+        onPress();
+      }}
+      hitSlop={HIT_SLOP}
+      accessibilityRole="button"
+      accessibilityLabel={label}
+      accessibilityHint="Take a photo or choose one from your library"
+      style={({ pressed }) => [styles.chip, styles.photoChip, pressed && styles.chipPressed]}
+    >
+      <Ionicons name="camera-outline" size={14} color="#FFFFFF" />
+      <Text variant="caption" style={styles.chipLabel}>
+        {label}
+      </Text>
+    </Pressable>
   );
 }
 
@@ -159,10 +217,10 @@ function YoutubeHowTo({ name }: { name: string }) {
       accessibilityRole="link"
       accessibilityLabel={`Search YouTube for ${query}`}
       accessibilityHint="Opens the YouTube app"
-      style={({ pressed }) => [styles.youtube, pressed && styles.youtubePressed]}
+      style={({ pressed }) => [styles.chip, styles.youtubeChip, pressed && styles.chipPressed]}
     >
       <Ionicons name="logo-youtube" size={14} color="#FF0000" />
-      <Text variant="caption" style={styles.youtubeLabel}>
+      <Text variant="caption" style={styles.chipLabel}>
         How to
       </Text>
     </Pressable>
@@ -212,9 +270,9 @@ const styles = StyleSheet.create({
     borderRadius: radius.sm,
     overflow: 'hidden',
   },
-  youtube: {
+  // Shared by the two chips on the artwork; each adds only its corner.
+  chip: {
     position: 'absolute',
-    top: spacing.sm,
     right: spacing.sm,
     zIndex: 2,
     elevation: 2,
@@ -226,6 +284,8 @@ const styles = StyleSheet.create({
     borderRadius: radius.pill,
     backgroundColor: 'rgba(0,0,0,0.72)',
   },
-  youtubePressed: { opacity: 0.7 },
-  youtubeLabel: { color: '#FFFFFF' },
+  youtubeChip: { top: spacing.sm },
+  photoChip: { bottom: spacing.sm },
+  chipPressed: { opacity: 0.7 },
+  chipLabel: { color: '#FFFFFF' },
 });

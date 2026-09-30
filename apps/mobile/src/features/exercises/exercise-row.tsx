@@ -79,6 +79,7 @@ export const ExerciseRow = memo(function ExerciseRow({
       <ExerciseThumbnail
         name={exercise.name}
         url={exercise.thumbnailUrl}
+        photo={exercise.imageUrl}
         selected={selected}
         size={44}
       />

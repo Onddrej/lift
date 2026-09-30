@@ -126,7 +126,7 @@ function ExerciseStatRow({
       onPress={() => router.push({ pathname: '/exercise/[id]', params: { id: exercise.id } })}
       style={({ pressed }) => [styles.row, pressed && { backgroundColor: colors.surfacePressed }]}
     >
-      <ExerciseThumbnail name={exercise.name} url={exercise.thumbnailUrl} size={44} />
+      <ExerciseThumbnail name={exercise.name} url={exercise.thumbnailUrl} photo={exercise.imageUrl} size={44} />
 
       <View style={styles.body}>
         <Text variant="bodyMedium" numberOfLines={1}>

@@ -66,6 +66,29 @@
         }
       ],
       "expo-image",
+      [
+        "expo-image-picker",
+        {
+          "cameraPermission": "Allow $(PRODUCT_NAME) to use the camera so you can photograph an exercise or machine.",
+          "photosPermission": "Allow $(PRODUCT_NAME) to open your library so you can choose a photo for an exercise.",
+          "colors": {
+            "cropToolbarColor": "#F4F4F6",
+            "cropToolbarIconColor": "#111114",
+            "cropToolbarActionTextColor": "#54700A",
+            "cropBackButtonIconColor": "#111114",
+            "cropBackgroundColor": "#F4F4F6"
+          },
+          "dark": {
+            "colors": {
+              "cropToolbarColor": "#000000",
+              "cropToolbarIconColor": "#F5F7F8",
+              "cropToolbarActionTextColor": "#D2F34B",
+              "cropBackButtonIconColor": "#F5F7F8",
+              "cropBackgroundColor": "#000000"
+            }
+          }
+        }
+      ],
       "./plugins/with-theme-launcher-icons.ts",
       "./plugins/with-exact-alarms.ts"
     ],

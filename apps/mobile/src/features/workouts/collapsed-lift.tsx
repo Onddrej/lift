@@ -75,6 +75,7 @@ export function CollapsedLift({
         <ExerciseThumbnail
           name={lead.name}
           url={lead.thumbnailUrl}
+          photo={lead.imageUrl}
           size={THUMBNAIL_SIZE}
           style={styles.thumbnail}
         />

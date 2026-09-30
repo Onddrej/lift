@@ -277,6 +277,7 @@ export default function WorkoutDetailScreen() {
               exerciseId={entry.exercise.id}
               name={entry.exercise.name}
               thumbnailUrl={entry.exercise.thumbnailUrl}
+              photo={entry.exercise.imageUrl}
               notes={entry.workoutExercise.notes}
               sets={entry.sets}
               recordSetIds={prSetIds}

@@ -34,6 +34,8 @@ export interface ExerciseSetListProps {
   weightUnit: WeightUnit;
   distanceUnit: DistanceUnit;
   thumbnailUrl?: string | null;
+  /** The user's own photo, as stored. Drawn in place of the catalog artwork. */
+  photo?: string | null;
   /**
    * Links the title through to the exercise's own screen. Omitted when the list
    * is already *on* that screen: a row that navigates to where you are is a
@@ -68,6 +70,7 @@ export function ExerciseSetList({
   weightUnit,
   distanceUnit,
   thumbnailUrl,
+  photo,
   exerciseId,
   notes,
   recordSetIds,
@@ -83,6 +86,7 @@ export function ExerciseSetList({
       <ExerciseThumbnail
         name={name}
         url={thumbnailUrl}
+        photo={photo}
         size={THUMBNAIL_SIZE}
         style={styles.thumbnail}
       />

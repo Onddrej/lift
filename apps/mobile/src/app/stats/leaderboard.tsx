@@ -203,7 +203,7 @@ function BoardRow({
           </Text>
         </View>
       ) : (
-        <ExerciseThumbnail name={exercise.name} url={exercise.thumbnailUrl} size={34} />
+        <ExerciseThumbnail name={exercise.name} url={exercise.thumbnailUrl} photo={exercise.imageUrl} size={34} />
       )}
 
       <View style={styles.body}>

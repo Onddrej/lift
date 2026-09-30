@@ -176,6 +176,7 @@ export default function ActiveWorkoutScreen() {
     name: string;
     thumbnailUrl: string | null;
     videoUrl: string | null;
+    photo: string | null;
   } | null>(null);
 
   /*
@@ -1173,6 +1174,7 @@ export default function ActiveWorkoutScreen() {
                     name: detail.exercise.name,
                     thumbnailUrl: detail.exercise.thumbnailUrl,
                     videoUrl: detail.exercise.videoUrl,
+                    photo: detail.exercise.imageUrl,
                   })
                 }
                 onEditSuperset={
@@ -1275,6 +1277,7 @@ export default function ActiveWorkoutScreen() {
                         name: lead.name,
                         thumbnailUrl: lead.thumbnailUrl,
                         videoUrl: lead.videoUrl,
+                        photo: lead.imageUrl,
                       })
                     }
                   />
@@ -1417,6 +1420,7 @@ export default function ActiveWorkoutScreen() {
           name={demo.name}
           thumbnailUrl={demo.thumbnailUrl}
           videoUrl={demo.videoUrl}
+          photo={demo.photo}
           onClose={() => setDemo(null)}
         />
       )}

@@ -45,6 +45,7 @@ interface ExerciseMeta {
   primaryMuscle: MuscleGroup;
   trackingType: TrackingType;
   thumbnailUrl: string | null;
+  imageUrl: string | null;
   isCustom: boolean;
   isArchived: boolean;
 }
@@ -97,6 +98,7 @@ async function loadSets(
           primaryMuscle: exercises.primaryMuscle,
           trackingType: exercises.trackingType,
           thumbnailUrl: exercises.thumbnailUrl,
+          imageUrl: exercises.imageUrl,
           isCustom: exercises.isCustom,
           isArchived: exercises.isArchived,
         })
@@ -117,6 +119,7 @@ export interface MainExercise {
   equipment: Equipment;
   primaryMuscle: MuscleGroup;
   thumbnailUrl: string | null;
+  imageUrl: string | null;
   /** Distinct finished sessions the exercise appeared in. */
   times: number;
   sets: number;
@@ -192,6 +195,7 @@ export async function getExercisesBetween(
         equipment: meta.equipment,
         primaryMuscle: meta.primaryMuscle,
         thumbnailUrl: meta.thumbnailUrl,
+        imageUrl: meta.imageUrl,
         times: 0,
         sets: 0,
         reps: 0,
@@ -279,6 +283,7 @@ export interface LeaderboardExercise {
   equipment: Equipment;
   primaryMuscle: MuscleGroup;
   thumbnailUrl: string | null;
+  imageUrl: string | null;
   /** Sessions containing a scoring set. Compared against `LEADERBOARD_MIN_SESSIONS`. */
   sessions: number;
   bestOneRepMaxKg: number;
@@ -377,6 +382,7 @@ export async function getLeaderboardExercises(
         equipment: meta.equipment,
         primaryMuscle: meta.primaryMuscle,
         thumbnailUrl: meta.thumbnailUrl,
+        imageUrl: meta.imageUrl,
         sessions: 0,
         bestOneRepMaxKg: 0,
         bestSetWeightKg: 0,
