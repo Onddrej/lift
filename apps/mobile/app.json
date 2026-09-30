@@ -9,10 +9,10 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.lift.app"
+      "bundleIdentifier": "com.onddrej.lift"
     },
     "android": {
-      "package": "com.lift.app",
+      "package": "com.onddrej.lift",
       "adaptiveIcon": {
         "backgroundColor": "#0C0C0F",
         "foregroundImage": "./assets/images/android-icon-foreground.png",
@@ -40,11 +40,7 @@
       "policy": "fingerprint"
     },
     "updates": {
-      "url": "https://u.expo.dev/8a625a40-8cba-4aa3-ac08-9ae4dd880d8e",
-      "requestHeaders": {
-        "expo-channel-name": "production"
-      },
-      "fallbackToCacheTimeout": 0
+      "enabled": false
     },
     "plugins": [
       "expo-router",
