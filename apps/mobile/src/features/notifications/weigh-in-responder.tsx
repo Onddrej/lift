@@ -191,6 +191,7 @@ async function handleResponse(response: NotificationResponse): Promise<void> {
 
   if (stored === null || !isPlausibleMeasurement('bodyweight', stored)) {
     await postRetry(typed, prefs);
+    await dismissDeliveredNotification(response.notification.request.identifier);
     return;
   }
 
@@ -201,6 +202,23 @@ async function handleResponse(response: NotificationResponse): Promise<void> {
   // one. Nothing else in this flow opens the app, so if this did not run the
   // body would keep naming a figure the user has since replaced.
   await refreshWeighInReminder();
+
+  // Android leaves a text-reply notification showing a "sending" spinner until
+  // the app dismisses the delivered notification itself; `cancelScheduledNotificationAsync`
+  // inside `refreshWeighInReminder` only reaches *pending* requests, not this
+  // already-posted one. Same two-call split as `cancelRestNotification`.
+  await dismissDeliveredNotification(response.notification.request.identifier);
+}
+
+async function dismissDeliveredNotification(identifier: string): Promise<void> {
+  const Notifications = getNotifications();
+  if (!Notifications) return;
+
+  try {
+    await Notifications.dismissNotificationAsync(identifier);
+  } catch {
+    // Already gone, or the OS never finished posting it.
+  }
 }
 
 /**
