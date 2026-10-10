@@ -19,6 +19,16 @@ an account is optional and only adds backup and cross-device sync — and the
 server behind that sync is this same repository, so you can run your own
 instead of trusting someone else's.
 
+<p align="center">
+  <a href="docs/promo/lift-promo.mp4">
+    <img src="docs/promo/poster.png" alt="Play the one-minute tour of Lift" width="720">
+  </a>
+</p>
+
+<p align="center">
+  <sub>A one-minute tour, with sound. GitHub opens it in a player.</sub>
+</p>
+
 ## Screens
 
 | Home | Logging a session | Calendar |
