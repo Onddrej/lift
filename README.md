@@ -63,7 +63,7 @@ each of the eight palettes, is in [`screenshots/`](screenshots).
 - **Body tracking**, with estimated 1RM, BMI and body-fat figures.
 - **An AI coach, off by default and on your own key.** The app tells you which
   muscles are under their weekly minimum without one: that figure is arithmetic
-  over the volume landmarks and it works offline. Add an Anthropic or
+  over the volume landmarks and it works offline. Add a Claude, DeepSeek or
   OpenAI-compatible key under Settings, AI coach, and the same screens will also
   say what to change, review a block of training in a conversation you can
   follow up on, and write a few sentences on the session you just finished.
@@ -209,9 +209,11 @@ statistics screens.
 token uses and for the same reasons. It is not in `settings`, so it is not in a
 backup, and it is never rendered back into a field.
 
-**Providers.** Anthropic natively, plus anything speaking OpenAI's
+**Providers.** Anthropic and DeepSeek natively, plus anything speaking OpenAI's
 chat-completions dialect, which covers OpenAI, OpenRouter, Groq, and a local
-Ollama or LM Studio. Anthropic has its own adapter for one reason worth the
+Ollama or LM Studio. DeepSeek is that same dialect against its own host; it is
+a named entry so the address and model default to the right ones instead of
+needing to be typed. Anthropic has its own adapter for one reason worth the
 duplication: the training document is tens of thousands of tokens and every
 follow-up question re-sends it, so `cache_control` on that first message is most
 of what a second question costs.

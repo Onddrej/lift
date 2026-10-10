@@ -72,11 +72,12 @@ export interface AiConfig {
   baseUrl?: string;
 }
 
-export const AI_PROVIDERS = ['anthropic', 'openai-compatible'] as const;
+export const AI_PROVIDERS = ['anthropic', 'deepseek', 'openai-compatible'] as const;
 export type AiProvider = (typeof AI_PROVIDERS)[number];
 
 export const AI_PROVIDER_LABELS: Record<AiProvider, string> = {
   anthropic: 'Claude',
+  deepseek: 'DeepSeek',
   'openai-compatible': 'OpenAI-compatible',
 };
 
@@ -91,12 +92,14 @@ export const AI_PROVIDER_LABELS: Record<AiProvider, string> = {
  */
 export const DEFAULT_AI_MODELS: Record<AiProvider, string> = {
   anthropic: 'claude-sonnet-4-5',
+  deepseek: 'deepseek-chat',
   'openai-compatible': 'gpt-4o-mini',
 };
 
 /** The address used when the user leaves `baseUrl` empty. */
 export const DEFAULT_BASE_URLS: Record<AiProvider, string> = {
   anthropic: 'https://api.anthropic.com',
+  deepseek: 'https://api.deepseek.com',
   'openai-compatible': 'https://api.openai.com',
 };
 
