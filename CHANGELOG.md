@@ -8,6 +8,12 @@ run. To change an entry, reword the commit; to change the shape of the file,
 change the script. Releases before v0.8.0 predate the commit convention and
 appear under "Other changes".
 
+## [0.26.0](https://github.com/pawan67/lift/compare/v0.25.0...v0.26.0) - 2026-10-10
+
+### Features
+
+- put the coach on Home with a composer that stays above the keyboard ([938c335](https://github.com/pawan67/lift/commit/938c3357784f55c3ea96e5bec2fde70c9b722abe))
+
 ## [0.25.0](https://github.com/pawan67/lift/compare/v0.24.0...v0.25.0) - 2026-10-10
 
 ### Features
