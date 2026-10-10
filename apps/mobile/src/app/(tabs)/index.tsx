@@ -31,6 +31,7 @@ import { BodyweightSquareWidget } from '@/features/measurements/bodyweight-squar
 import { CalendarWidget } from '@/components/widgets/calendar-widget';
 import { VolumeAdviceSection } from '@/features/ai/volume-advice-section';
 import { SquareWidget, WideWidget, widgetFigure } from '@/components/ui/widget';
+import { CoachEntryCard } from '@/features/coach/coach-entry-card';
 import { UpNextCard } from '@/features/routines/up-next-card';
 import { listCompletedWorkouts } from '@/features/workouts/repository';
 import type { Workout } from '@/db/schema';
@@ -381,6 +382,12 @@ export default function HomeScreen() {
          * routine to suggest, and the masthead then leads as it always did.
          */}
         <UpNextCard style={styles.upNext} />
+
+        {/*
+         * The coach, directly under what to train today: the two things a
+         * visit to Home is usually for. Draws nothing with AI switched off.
+         */}
+        <CoachEntryCard style={styles.upNext} />
 
         {/*
          * Four blocks, revealed in the order they are read.

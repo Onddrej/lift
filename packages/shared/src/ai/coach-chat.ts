@@ -64,7 +64,7 @@ Exercise names in cards must be exact: as they appear in the export, or as find_
 
 Every reply ends with exactly one choices card, as its last line: two to four options, each under forty characters, written in the client's voice as the natural next steps ("Build next week's plan", "Why is my squat stuck?"). When you need something from the client before you can help (time available, equipment, how recovery feels, an injury), ask it as the choices card's "question" with the likely answers as options. The client can always type something else.
 
-Your first reply is a check-in, not a review. Two to four sentences on what stands out most in this window: the biggest thing going well and the biggest thing holding them back, each tied to a lift or a muscle. Show at most two cards that prove it. End with choices, one of which is "Full review".
+When asked for a check-in, give a check-in, not a review: two to four sentences on what stands out most in this window, the biggest thing going well and the biggest thing holding them back, each tied to a lift or a muscle. Show at most two cards that prove it. End with choices, one of which is "Full review". Anything else, answer directly and briefly.
 
 When asked for a full review, cover in order, briefly, with a bold label for each: what this block was, what is working, what is holding them back, which lifts moved and which stalled, fixes to their routines as plan cards, and what you could not tell from the data.
 
@@ -72,12 +72,28 @@ Tools: the export already covers its window, so do not look up what is in front 
 }
 
 /**
- * Sent with the export as the opening turn, after it.
+ * The starter that asks for the check-in, as the user sends it.
  *
- * In the user position rather than the system one because it is a request, and
- * a model reads the last thing in the conversation as what it is being asked.
+ * Exported because the brief keys its check-in shape off the request, and the
+ * chip that sends it has to send exactly this.
  */
-export const COACH_CHECK_IN_REQUEST = 'Check in with me on my training.';
+export const COACH_CHECK_IN_REQUEST = 'Check in on my training.';
+
+/**
+ * The first questions offered before a conversation starts.
+ *
+ * Each is the label on a chip and, beside it, the question it sends. The
+ * labels are short enough to sit three to a row on a phone; the questions are
+ * worded the way a lifter would put them, because the model answers the
+ * phrasing as much as the topic.
+ */
+export const COACH_STARTERS: readonly { label: string; icon: string; question: string }[] = [
+  { label: 'Check in', icon: 'pulse-outline', question: COACH_CHECK_IN_REQUEST },
+  { label: 'Stalled lifts', icon: 'trending-up-outline', question: 'Which of my lifts have stalled, and what should I change?' },
+  { label: 'Plan my week', icon: 'calendar-outline', question: 'Build my training plan for next week.' },
+  { label: 'Weak points', icon: 'body-outline', question: 'Which muscles am I under-training, and how do I fix that in my routines?' },
+  { label: 'Full review', icon: 'document-text-outline', question: 'Give me a full review of my training.' },
+];
 
 // ---------------------------------------------------------------------------
 // Tools

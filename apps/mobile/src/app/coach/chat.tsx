@@ -1,29 +1,35 @@
 import { Ionicons } from '@expo/vector-icons';
 import {
   buildCoachDocument,
-  COACH_CHECK_IN_REQUEST,
+  COACH_STARTERS,
   COACH_TOOLS,
   coachChatBrief,
+  describeElapsed,
   describeToolCall,
-  estimateTokens,
   type AiConfig,
   type AiMessage,
   type AiToolResult,
 } from '@lift/shared';
-import { Stack, useLocalSearchParams } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, StyleSheet, View } from 'react-native';
+import { router, Stack, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
+import { Pressable, ScrollView, StyleSheet, View, type TextInput } from 'react-native';
+import Animated, { useAnimatedStyle } from 'react-native-reanimated';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Button, Card, EmptyState, Screen, Text, TextField, useScrollEdge } from '@/components/ui';
-import { requireAiConfig, streamTurn, type StreamedTurn } from '@/features/ai/client';
+import { Button, Card, Chip, EmptyState, HeaderAction, Screen, Text, useScrollEdge } from '@/components/ui';
+import { loadAiConfig, requireAiConfig, streamTurn, type StreamedTurn } from '@/features/ai/client';
 import { AiError } from '@/features/ai/errors';
-import { appendMessage, createThread, readMessages } from '@/features/ai/threads';
+import { appendMessage, createThread, listThreads, readMessages, type CoachThread } from '@/features/ai/threads';
+import { STAT_RANGES, type StatRange } from '@/features/analytics/windows';
 import { CoachReply } from '@/features/coach/coach-reply';
+import { Composer } from '@/features/coach/composer';
 import { buildCoachReport } from '@/features/coach/report';
 import { runCoachTool } from '@/features/coach/tools';
-import type { StatRange } from '@/features/analytics/windows';
+import { useKeyboardInset } from '@/features/coach/use-keyboard-inset';
+import { useSession } from '@/features/sync/auth-client';
+import { showDialog } from '@/store/dialog';
 import { useSettings } from '@/store/settings';
-import { spacing, useColors } from '@/theme';
+import { radius, spacing, stroke, useColors } from '@/theme';
 
 /**
  * Room for a full review with plan cards in it, and for anything after it.
@@ -44,22 +50,38 @@ const MAX_OUTPUT_TOKENS = 6144;
  */
 const MAX_LOOKUP_ROUNDS = 4;
 
+/** Earlier conversations shown on the landing. The rest are on the coach screen. */
+const RECENT_THREADS = 6;
+
+/** How long a stored title may run before it is cut. */
+const TITLE_LENGTH = 80;
+
 /**
- * The document only travels once.
+ * The coach.
  *
- * Every turn after the first is a question about an answer the model can still
- * see, so the thread carries the whole exchange and the log is never re-read.
- * Rebuilding it per turn would not merely cost tokens: the log moves, so a
- * follow-up would silently change the evidence underneath an answer that has
- * already been given. What the coach needs beyond it, it looks up.
+ * Opens on a landing rather than straight into an answer: a greeting, the
+ * composer, a row of starting questions and the conversations already had.
+ * Nothing is read or sent until the user asks something, which is also when
+ * the log goes out, so an accidental tap costs nothing.
+ *
+ * The document only travels once. Every turn after the first is a question
+ * about an answer the model can still see, so the thread carries the whole
+ * exchange and the log is never re-read. Rebuilding it per turn would not
+ * merely cost tokens: the log moves, so a follow-up would silently change the
+ * evidence underneath an answer that has already been given. What the coach
+ * needs beyond it, it looks up.
  */
 export default function CoachChatScreen() {
   const scrollEdge = useScrollEdge();
   const colors = useColors();
+  const insets = useSafeAreaInsets();
   const unit = useSettings((state) => state.weightUnit);
+  const { data: session } = useSession();
   const params = useLocalSearchParams<{
     /** An existing conversation to reopen. When set, nothing is re-read or re-asked. */
     thread?: string;
+    /** A question to send straight away, from a starter outside this screen. */
+    ask?: string;
     range?: string;
     sessions?: string;
     routines?: string;
@@ -68,9 +90,14 @@ export default function CoachChatScreen() {
 
   const [messages, setMessages] = useState<AiMessage[]>([]);
   const [streaming, setStreaming] = useState('');
-  const [pending, setPending] = useState(true);
+  const [pending, setPending] = useState(false);
   const [error, setError] = useState<AiError | null>(null);
   const [question, setQuestion] = useState('');
+  const [range, setRange] = useState<StatRange>(isRange(params.range) ? params.range : '30d');
+  const [configured, setConfigured] = useState<boolean | null>(null);
+  const [threads, setThreads] = useState<CoachThread[]>([]);
+  /** When the thread list was read, so "3 days ago" is stable across renders. */
+  const [listedAt, setListedAt] = useState(0);
 
   const threadId = useRef<string | null>(null);
   const abort = useRef<AbortController | null>(null);
@@ -93,7 +120,27 @@ export default function CoachChatScreen() {
    */
   const toolsAccepted = useRef(true);
   const scroller = useRef<ScrollView | null>(null);
-  const started = useRef(false);
+  const input = useRef<TextInput | null>(null);
+  const container = useRef<View | null>(null);
+  const opened = useRef(false);
+
+  const keyboard = useKeyboardInset(container);
+  // The keyboard covers the home-indicator inset, so the larger of the two is
+  // the room to leave, never their sum: summing would float the composer a
+  // gesture bar's height above the keys.
+  const bottomRoom = useAnimatedStyle(() => ({
+    height: Math.max(insets.bottom, keyboard.inset.value),
+  }));
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadAiConfig().then((config) => setConfigured(config !== null));
+      void listThreads('review').then((rows) => {
+        setThreads(rows);
+        setListedAt(Date.now());
+      });
+    }, []),
+  );
 
   /**
    * Runs one exchange to its answer: stream, look up what was asked for,
@@ -196,147 +243,282 @@ export default function CoachChatScreen() {
     [unit],
   );
 
-  // The opening turn. Runs once, guarded by a ref rather than by the dependency
-  // array: this spends money, and a re-run caused by a re-render would spend it
-  // again without anybody asking.
-  useEffect(() => {
-    if (started.current) return;
-    started.current = true;
+  /**
+   * The first question of a conversation, which is when the log is read.
+   *
+   * The question rides in the document's turn rather than its own: two user
+   * turns in a row is a conversation Anthropic refuses.
+   */
+  const start = useCallback(
+    async (text: string) => {
+      setPending(true);
+      setError(null);
+      setMessages([{ role: 'user', content: text }]);
 
-    void (async () => {
       try {
-        // Reopening. The stored turns are the conversation, and re-reading the
-        // log to rebuild the document would be both a wasted request and a lie:
-        // the training has moved since the answer was written, and an answer
-        // must keep the evidence it was actually given.
-        if (params.thread) {
-          threadId.current = params.thread;
-          setMessages(answerDangling(await readMessages(params.thread)));
-          setPending(false);
-          return;
-        }
-
         const report = await buildCoachReport({
-          range: (params.range as StatRange) ?? '30d',
+          range,
           includeSessions: params.sessions !== '0',
           includeRoutines: params.routines !== '0',
           note: params.note?.trim() || null,
         });
 
-        // The request rides in the document's turn rather than its own: two
-        // user turns in a row is a conversation Anthropic refuses.
-        const opening: AiMessage[] = [
-          { role: 'user', content: `${buildCoachDocument(report)}\n\n${COACH_CHECK_IN_REQUEST}` },
-        ];
+        const opening: AiMessage[] = [{ role: 'user', content: `${buildCoachDocument(report)}\n\n${text}` }];
         setMessages(opening);
 
         const config = await requireAiConfig();
         threadId.current = await createThread({
           kind: 'review',
-          title: report.rangeLabel,
+          // The question, not the window. A list of earlier conversations all
+          // titled "Last 30 days" says nothing about which one is which.
+          title: text.length > TITLE_LENGTH ? `${text.slice(0, TITLE_LENGTH - 1).trimEnd()}…` : text,
           model: config.model,
         });
         await appendMessage(threadId.current, opening[0]!);
 
         await send(opening);
       } catch (cause) {
+        // Nothing was asked yet, so nothing is kept: back to the landing with
+        // the question still in the box, ready to send again.
+        if (!threadId.current) {
+          setMessages([]);
+          setQuestion(text);
+        }
         setError(cause instanceof AiError ? cause : new AiError('bad-response'));
         setPending(false);
       }
-    })();
+    },
+    [range, params.sessions, params.routines, params.note, send],
+  );
 
-    return () => {
-      // Leaving the screen stops the stream rather than paying for an answer
-      // into a screen that is gone.
-      abort.current?.abort();
-    };
-  }, [params.thread, params.range, params.sessions, params.routines, params.note, send]);
+  // Reopening a thread, or a question handed over from another screen. Runs
+  // once, guarded by a ref rather than by the dependency array: a question
+  // spends money, and a re-run caused by a re-render would spend it again.
+  useEffect(() => {
+    if (opened.current) return;
+    opened.current = true;
+
+    if (params.thread) {
+      const id = params.thread;
+      threadId.current = id;
+      // The stored turns are the conversation. Re-reading the log to rebuild
+      // the document would be both a wasted request and a lie: the training has
+      // moved since the answer was written, and an answer must keep the
+      // evidence it was actually given.
+      void readMessages(id).then((stored) => setMessages(answerDangling(stored)));
+    } else if (params.ask?.trim()) {
+      // A microtask later rather than in the effect's own body, which would set
+      // state while the effect is still running.
+      const text = params.ask.trim();
+      void Promise.resolve().then(() => start(text));
+    }
+  }, [params.thread, params.ask, start]);
+
+  // Leaving the screen stops the stream rather than paying for an answer into a
+  // screen that is gone.
+  useEffect(() => () => abort.current?.abort(), []);
 
   const say = useCallback(
     (raw: string) => {
       const text = raw.trim();
-      if (text.length === 0 || pending || messages.length === 0) return;
+      if (text.length === 0 || pending || configured === false) return;
+      setQuestion('');
+
+      if (messages.length === 0) {
+        void start(text);
+        return;
+      }
 
       const turn: AiMessage = { role: 'user', content: text };
       const turns: AiMessage[] = [...messages, turn];
-      setQuestion('');
       setMessages(turns);
 
       if (threadId.current) void appendMessage(threadId.current, turn);
       void send(turns);
     },
-    [pending, messages, send],
+    [pending, configured, messages, start, send],
   );
 
+  const chooseRange = useCallback(async () => {
+    const options = STAT_RANGES.filter((option) => option.value !== 'all');
+    const index = await showDialog({
+      title: 'What should the coach read?',
+      message: 'Sessions, sets per muscle, routines and records from this window. Older history it looks up when it needs it.',
+      actions: [
+        ...options.map((option) => ({ label: option.label, style: 'default' as const })),
+        { label: 'Cancel', style: 'cancel' as const },
+      ],
+    });
+    const picked = options[index];
+    if (picked) setRange(picked.value);
+  }, []);
+
+  const started = messages.length > 0;
   // The document is the first turn and is tens of thousands of characters. It is
-  // not shown: nobody wants to read their own log back, and the screen it was
-  // built on already offers a preview of it.
+  // not shown: nobody wants to read their own log back.
   const conversation = messages.slice(1);
   const lastReply = lastAnswerIndex(conversation);
+  const rangeLabel = STAT_RANGES.find((option) => option.value === range)?.label ?? 'Last 30 days';
+
+  const composer = (
+    <Composer
+      ref={input}
+      value={question}
+      onChangeText={setQuestion}
+      onSend={() => say(question)}
+      onStop={() => abort.current?.abort()}
+      pending={pending}
+      disabled={configured === false}
+      placeholder={started ? 'Ask a follow-up' : 'Ask about your training, a lift, or your plan'}
+      context={rangeLabel}
+      onContextPress={started ? undefined : () => void chooseRange()}
+    />
+  );
 
   return (
     <Screen width="form" scrolled={scrollEdge.progress}>
-      <Stack.Screen options={{ title: 'Coach' }} />
+      <Stack.Screen
+        options={{
+          title: 'Coach',
+          headerRight: () => (
+            <HeaderAction
+              label="What the coach reads, and exporting it"
+              icon="options-outline"
+              onPress={() => router.push('/coach')}
+            />
+          ),
+        }}
+      />
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-        style={styles.flex}
-      >
+      <View ref={container} onLayout={keyboard.remeasure} collapsable={false} style={styles.flex}>
         <ScrollView
           {...scrollEdge.list}
           ref={scroller}
-          contentContainerStyle={styles.content}
-          onContentSizeChange={() => scroller.current?.scrollToEnd({ animated: true })}
+          keyboardShouldPersistTaps="handled"
+          contentContainerStyle={started ? styles.content : styles.landing}
+          onContentSizeChange={() => {
+            if (started) scroller.current?.scrollToEnd({ animated: true });
+          }}
         >
-          {messages.length > 0 && (
-            <Text variant="caption" color="textTertiary">
-              Your log went out as one message of roughly{' '}
-              {estimateTokens(messages[0]!.content).toLocaleString()} tokens. The coach looks
-              up anything older or more detailed as it needs it.
-            </Text>
-          )}
-
-          {conversation.map((message, index) => {
-            if (message.role === 'user') {
-              // A turn that only carries lookup results is the app talking to
-              // the model, not the user, and has nothing to show.
-              if (message.content.length === 0) return null;
-              return (
-                <Card key={index} style={styles.question}>
-                  <Text variant="body">{message.content}</Text>
+          {started ? (
+            <>
+              {conversation.length === 0 && messages[0] && (
+                <Card style={styles.question}>
+                  <Text variant="body">{firstQuestion(messages[0].content)}</Text>
                 </Card>
-              );
-            }
+              )}
 
-            return (
-              <View key={index} collapsable={false} style={styles.answer}>
-                {message.content.length > 0 && (
-                  <CoachReply
-                    text={message.content}
-                    interactive={!pending && index === lastReply}
-                    onChoose={say}
-                  />
-                )}
-                {message.toolCalls?.map((call) => (
-                  <View key={call.id} style={styles.lookup}>
-                    <Ionicons name="search-outline" size={14} color={colors.textTertiary} />
-                    <Text variant="caption" color="textTertiary">
-                      {describeToolCall(call)}
-                    </Text>
+              {conversation.map((message, index) => {
+                if (message.role === 'user') {
+                  // A turn that only carries lookup results is the app talking
+                  // to the model, not the user, and has nothing to show.
+                  if (message.content.length === 0) return null;
+                  return (
+                    <Card key={index} style={styles.question}>
+                      <Text variant="body">{message.content}</Text>
+                    </Card>
+                  );
+                }
+
+                return (
+                  <View key={index} collapsable={false} style={styles.answer}>
+                    {message.content.length > 0 && (
+                      <CoachReply
+                        text={message.content}
+                        interactive={!pending && index === lastReply}
+                        onChoose={say}
+                      />
+                    )}
+                    {message.toolCalls?.map((call) => (
+                      <View key={call.id} style={styles.lookup}>
+                        <Ionicons name="search-outline" size={14} color={colors.textTertiary} />
+                        <Text variant="caption" color="textTertiary">
+                          {describeToolCall(call)}
+                        </Text>
+                      </View>
+                    ))}
                   </View>
+                );
+              })}
+
+              {streaming.length > 0 && <CoachReply text={streaming} interactive={false} onChoose={say} />}
+
+              {pending && streaming.length === 0 && (
+                <Text variant="body" color="textTertiary">
+                  {conversation.length === 0 ? 'Reading your training…' : 'Thinking…'}
+                </Text>
+              )}
+            </>
+          ) : (
+            <>
+              <View style={styles.greeting}>
+                <Text variant="title" align="center">
+                  {greeting(session?.user?.name)}
+                </Text>
+                <Text variant="body" color="textSecondary" align="center">
+                  I read your log before I answer. Where should we start?
+                </Text>
+              </View>
+
+              {configured === false && (
+                <Card style={styles.setup}>
+                  <Text variant="bodyMedium">Connect a model to talk to your coach</Text>
+                  <Text variant="caption" color="textSecondary">
+                    Add a Claude, DeepSeek or OpenAI-compatible key. It stays on this phone. Or
+                    export your log and paste it into any AI you already use.
+                  </Text>
+                  <View style={styles.setupActions}>
+                    <Button title="Set up" size="sm" onPress={() => router.push('/settings/ai')} />
+                    <Button title="Export instead" size="sm" variant="secondary" onPress={() => router.push('/coach')} />
+                  </View>
+                </Card>
+              )}
+
+              {composer}
+
+              <View style={styles.starters}>
+                {COACH_STARTERS.map((starter) => (
+                  <Chip
+                    key={starter.label}
+                    label={starter.label}
+                    icon={starter.icon as ComponentProps<typeof Ionicons>['name']}
+                    disabled={configured === false || pending}
+                    onPress={() => say(starter.question)}
+                  />
                 ))}
               </View>
-            );
-          })}
 
-          {streaming.length > 0 && (
-            <CoachReply text={streaming} interactive={false} onChoose={say} />
-          )}
-
-          {pending && streaming.length === 0 && (
-            <Text variant="body" color="textTertiary">
-              {conversation.length === 0 ? 'Reading your training…' : 'Thinking…'}
-            </Text>
+              {threads.length > 0 && (
+                <View style={styles.previous}>
+                  <Text variant="label" color="textSecondary">
+                    Previous chats
+                  </Text>
+                  {threads.slice(0, RECENT_THREADS).map((thread) => (
+                    <Pressable
+                      key={thread.id}
+                      onPress={() => router.push({ pathname: '/coach/chat', params: { thread: thread.id } })}
+                      style={({ pressed }) => [
+                        styles.thread,
+                        {
+                          borderColor: colors.border,
+                          backgroundColor: pressed ? colors.surfacePressed : colors.surface,
+                        },
+                      ]}
+                    >
+                      <Ionicons name="chatbubble-ellipses-outline" size={16} color={colors.textTertiary} />
+                      <View style={styles.flex}>
+                        <Text variant="body" numberOfLines={1}>
+                          {thread.title}
+                        </Text>
+                        <Text variant="caption" color="textTertiary">
+                          {describeElapsed(thread.updatedAt, listedAt)}
+                        </Text>
+                      </View>
+                    </Pressable>
+                  ))}
+                </View>
+              )}
+            </>
           )}
 
           {error && (
@@ -348,35 +530,11 @@ export default function CoachChatScreen() {
           )}
         </ScrollView>
 
-        <View style={styles.composer}>
-          {pending ? (
-            <Button
-              title="Stop"
-              icon="stop-circle-outline"
-              variant="secondary"
-              fullWidth
-              onPress={() => abort.current?.abort()}
-            />
-          ) : (
-            <>
-              <TextField
-                multiline
-                value={question}
-                onChangeText={setQuestion}
-                placeholder="Ask your coach"
-                style={styles.input}
-                containerStyle={styles.inputContainer}
-              />
-              <Button
-                title="Send"
-                icon="arrow-up"
-                disabled={question.trim().length === 0 || messages.length === 0}
-                onPress={() => say(question)}
-              />
-            </>
-          )}
-        </View>
-      </KeyboardAvoidingView>
+        {started && <View style={styles.dock}>{composer}</View>}
+
+        {/* Pinned against Fabric's view flattening: its height animates. */}
+        <Animated.View collapsable={false} style={bottomRoom} />
+      </View>
     </Screen>
   );
 }
@@ -456,21 +614,55 @@ function lastAnswerIndex(conversation: AiMessage[]): number {
   return -1;
 }
 
+/**
+ * The question the user asked, out of the opening turn it shares with the log.
+ *
+ * The document ends where the question begins, after the last blank line. A
+ * thread from before questions rode along has no question there, and shows the
+ * last line of the document's footnotes instead, which is harmless.
+ */
+function firstQuestion(opening: string): string {
+  const cut = opening.lastIndexOf('\n\n');
+  return cut === -1 ? opening : opening.slice(cut + 2);
+}
+
+function greeting(name: string | null | undefined): string {
+  const hour = new Date().getHours();
+  const part = hour < 12 ? 'Good morning' : hour < 18 ? 'Good afternoon' : 'Good evening';
+  const first = name?.trim().split(/\s+/)[0];
+  return first ? `${part}, ${first}` : part;
+}
+
+function isRange(value: string | undefined): value is StatRange {
+  return STAT_RANGES.some((option) => option.value === value);
+}
+
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   content: { padding: spacing.lg, paddingBottom: spacing.xl, gap: spacing.lg },
-  question: { gap: spacing.sm },
-  // Pinned against Fabric's view flattening: layout-only, and its children
-  // change as lookups and the reply arrive.
+  landing: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    padding: spacing.lg,
+    paddingVertical: spacing.xxxl,
+    gap: spacing.xl,
+  },
+  greeting: { gap: spacing.sm, alignItems: 'center' },
+  setup: { gap: spacing.sm },
+  setupActions: { flexDirection: 'row', gap: spacing.sm, paddingTop: spacing.xs },
+  starters: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center', gap: spacing.sm },
+  previous: { gap: spacing.sm, paddingTop: spacing.lg },
+  thread: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
+    borderRadius: radius.lg,
+    borderWidth: stroke.outline,
+  },
+  question: { gap: spacing.sm, alignSelf: 'flex-end', maxWidth: '88%' },
   answer: { gap: spacing.sm },
   lookup: { flexDirection: 'row', alignItems: 'center', gap: spacing.xs },
-  composer: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    gap: spacing.sm,
-    padding: spacing.lg,
-    paddingTop: spacing.sm,
-  },
-  inputContainer: { flex: 1 },
-  input: { maxHeight: 120, textAlignVertical: 'top' },
+  dock: { paddingHorizontal: spacing.md, paddingTop: spacing.sm, paddingBottom: spacing.sm },
 });
