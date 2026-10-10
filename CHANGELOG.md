@@ -8,6 +8,17 @@ run. To change an entry, reword the commit; to change the shape of the file,
 change the script. Releases before v0.8.0 predate the commit convention and
 appear under "Other changes".
 
+## [0.24.0](https://github.com/pawan67/lift/compare/v0.23.0...v0.24.0) - 2026-10-10
+
+### Fixes
+
+- dismiss delivered weigh-in notification on Android after reply ([381bfb8](https://github.com/pawan67/lift/commit/381bfb8762c6055ea955e7135abb184dc14bd3bc))
+
+### Other changes
+
+- Delete package-lock.json ([7d545e1](https://github.com/pawan67/lift/commit/7d545e15f26985dd2207c8a9582958339f10ae4c))
+- added support for deepseek api key ([603881c](https://github.com/pawan67/lift/commit/603881cda830c47a21b53cce9351679bd732cdad))
+
 ## [0.23.0](https://github.com/pawan67/lift/compare/v0.22.0...v0.23.0) - 2026-10-01
 
 ### Features
