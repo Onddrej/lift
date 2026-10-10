@@ -8,6 +8,12 @@ run. To change an entry, reword the commit; to change the shape of the file,
 change the script. Releases before v0.8.0 predate the commit convention and
 appear under "Other changes".
 
+## [0.27.0](https://github.com/pawan67/lift/compare/v0.26.0...v0.27.0) - 2026-10-10
+
+### Features
+
+- make Home's Up next card compact, dismissible for the day, and introduced by the coach ([ffe28ed](https://github.com/pawan67/lift/commit/ffe28ed048f3eae9f9a11c971cda9f8b697a8485))
+
 ## [0.26.0](https://github.com/pawan67/lift/compare/v0.25.0...v0.26.0) - 2026-10-10
 
 ### Features
