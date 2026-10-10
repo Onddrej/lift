@@ -8,6 +8,13 @@ run. To change an entry, reword the commit; to change the shape of the file,
 change the script. Releases before v0.8.0 predate the commit convention and
 appear under "Other changes".
 
+## [0.25.0](https://github.com/pawan67/lift/compare/v0.24.0...v0.25.0) - 2026-10-10
+
+### Features
+
+- let the coach look up your log, draw your lifts and write plans you can save ([79c1b17](https://github.com/pawan67/lift/commit/79c1b17a8f25d025039ef4ca360da534e5c34308))
+- open the workout summary with a verdict and a next-time target per lift ([ea217b9](https://github.com/pawan67/lift/commit/ea217b9d20b496d7006c18d95537734fd52a2754))
+
 ## [0.24.0](https://github.com/pawan67/lift/compare/v0.23.0...v0.24.0) - 2026-10-10
 
 ### Fixes
