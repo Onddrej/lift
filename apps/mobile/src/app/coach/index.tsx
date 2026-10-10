@@ -150,7 +150,7 @@ export default function CoachScreen() {
   const remove = useCallback(
     async (threadId: string) => {
       const confirmed = await showConfirm({
-        title: 'Delete this review?',
+        title: 'Delete this conversation?',
         message: 'The conversation is removed from this device. Your training log is untouched.',
         confirmLabel: 'Delete',
       });
@@ -265,7 +265,7 @@ export default function CoachScreen() {
           sets each muscle got against what it needs, your routines and your records, and ends by
           asking for criticism. Send it to ChatGPT, Claude or whatever you use, and the answer comes
           back against your real log instead of a guess at it. Set up a key under Settings, AI
-          coach, and you can ask here instead and keep the conversation.
+          coach, and you can talk it through with a coach here instead.
         </Text>
 
         <SectionHeader title="How much to send" />
@@ -347,7 +347,7 @@ export default function CoachScreen() {
         {configured && (
           <>
             <Button
-              title="Ask now"
+              title="Talk to your coach"
               icon="sparkles-outline"
               size="lg"
               fullWidth
@@ -365,8 +365,9 @@ export default function CoachScreen() {
               }
             />
             <Text variant="caption" color="textTertiary" style={styles.hint}>
-              Sends the same message to your own model and reads the answer here, where you can ask
-              it follow-up questions against the same log.
+              Sends the same message to your own model. The coach checks in on what stands out,
+              shows your lifts and muscles straight from your log, looks up older sessions when it
+              needs them, and writes plans you can save as routines in one tap.
             </Text>
           </>
         )}
@@ -424,7 +425,7 @@ export default function CoachScreen() {
          */}
         {threads.length > 0 && (
           <>
-            <SectionHeader title="Earlier reviews" />
+            <SectionHeader title="Earlier conversations" />
             <Card padded={false}>
               {threads.map((thread, index) => (
                 <View key={thread.id}>
@@ -434,7 +435,7 @@ export default function CoachScreen() {
                     title={thread.title}
                     subtitle={`${formatDateTime(new Date(thread.createdAt))} · ${thread.model}`}
                     onPress={() => router.push({ pathname: '/coach/chat', params: { thread: thread.id } })}
-                    accessibilityActions={[{ name: 'delete', label: 'Delete this review' }]}
+                    accessibilityActions={[{ name: 'delete', label: 'Delete this conversation' }]}
                     onAccessibilityAction={(event: AccessibilityActionEvent) => {
                       if (event.nativeEvent.actionName === 'delete') void remove(thread.id);
                     }}

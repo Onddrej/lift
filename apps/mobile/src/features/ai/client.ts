@@ -24,9 +24,11 @@
 import {
   buildRequest,
   createSseDecoder,
+  createToolCallCollector,
   DEFAULT_AI_MODELS,
   type AiConfig,
   type AiRequest,
+  type AiToolCall,
   type SseEvent,
 } from '@lift/shared';
 import { fetch } from 'expo/fetch';
@@ -39,6 +41,14 @@ export interface StreamOptions {
   /** Called with each fragment, in order. Never with an empty string. */
   onDelta: (text: string) => void;
   signal?: AbortSignal;
+}
+
+/** Everything one reply carried: its text, and any lookups it asked for first. */
+export interface StreamedTurn {
+  text: string;
+  toolCalls: AiToolCall[];
+  /** DeepSeek's thinking-mode reasoning, kept only to hand back with the calls. */
+  reasoning: string;
 }
 
 /**
@@ -84,6 +94,21 @@ export async function streamCompletion(
   request: AiRequest,
   options: StreamOptions,
 ): Promise<string> {
+  return (await streamTurn(config, request, options)).text;
+}
+
+/**
+ * The same request, for a caller that offered tools.
+ *
+ * A reply that asks for a lookup usually has little or no text; the calls are
+ * the answer to this request, and the caller sends their results back as the
+ * next one.
+ */
+export async function streamTurn(
+  config: AiConfig,
+  request: AiRequest,
+  options: StreamOptions,
+): Promise<StreamedTurn> {
   const wire = buildRequest(config, request);
 
   let response: Awaited<ReturnType<typeof fetch>>;
@@ -121,18 +146,31 @@ async function readStream(
   config: AiConfig,
   body: ReadableStream<Uint8Array>,
   options: StreamOptions,
-): Promise<string> {
+): Promise<StreamedTurn> {
   const reader = body.getReader();
   const textDecoder = new TextDecoder();
   const sse = createSseDecoder(config);
+  const tools = createToolCallCollector();
 
   let answer = '';
+  let reasoning = '';
+  const finished = (): StreamedTurn => ({ text: answer, toolCalls: tools.finish(), reasoning });
 
   /** Applies one decoded event. Returns true when the stream is finished. */
   const apply = (event: SseEvent): boolean => {
     if (event.kind === 'delta') {
       answer += event.text;
       options.onDelta(event.text);
+      return false;
+    }
+
+    if (event.kind === 'tool-start' || event.kind === 'tool-delta') {
+      tools.push(event);
+      return false;
+    }
+
+    if (event.kind === 'reasoning') {
+      reasoning += event.text;
       return false;
     }
 
@@ -156,19 +194,19 @@ async function readStream(
       // intact. Without it a non-ASCII character split across a read boundary
       // arrives as a replacement glyph.
       for (const event of sse.push(textDecoder.decode(value, { stream: true }))) {
-        if (apply(event)) return answer;
+        if (apply(event)) return finished();
       }
     }
 
     // A stream that closed without a trailing newline still has a frame in the
     // buffer, and on some proxies that frame is the terminator.
     for (const event of sse.flush()) {
-      if (apply(event)) return answer;
+      if (apply(event)) return finished();
     }
 
     // Ended without a terminator at all. Some proxies simply close. What
     // arrived is still the answer, so it is returned rather than discarded.
-    return answer;
+    return finished();
   } catch (cause) {
     if (cause instanceof AiError) throw cause;
     if (options.signal?.aborted) throw new AiError('aborted');

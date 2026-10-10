@@ -689,6 +689,32 @@ export async function createRoutineFromPrescription(input: {
   return routine;
 }
 
+/**
+ * Rewrites an existing routine to a prescription resolved elsewhere.
+ *
+ * The coach's "update Push A". Same shape as `applySessionToRoutine`: clear the
+ * exercises, then write the new ones through `fillRoutine`, so the routine keeps
+ * its id, name, folder and history while its contents become the plan. The
+ * caller has already shown what changes and been told yes.
+ */
+export async function replaceRoutineContents(
+  routineId: string,
+  prescription: PrescribedExercise[],
+): Promise<void> {
+  // An empty plan would empty the routine, which is a deletion wearing the
+  // label of an update.
+  if (prescription.length === 0) return;
+
+  const source = await getRoutineDetail(routineId);
+  if (!source || source.routine.deletedAt !== null) throw new Error('That routine no longer exists');
+
+  for (const entry of source.exercises) {
+    await removeExerciseFromRoutine(entry.routineExercise.id);
+  }
+
+  await fillRoutine(routineId, prescription);
+}
+
 export type { PrescribedExercise };
 
 /** A sentence about one difference between a session and its routine. */

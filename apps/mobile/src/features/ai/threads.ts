@@ -12,7 +12,13 @@
  * renders its question after its answer is worse than one that renders slowly.
  */
 
-import { COACH_PROMPT_VERSION, uuidv7, type AiMessage, type CoachThreadKind } from '@lift/shared';
+import {
+  COACH_PROMPT_VERSION,
+  uuidv7,
+  type AiMessage,
+  type CoachMessageParts,
+  type CoachThreadKind,
+} from '@lift/shared';
 import { and, asc, desc, eq } from 'drizzle-orm';
 
 import { db } from '@/db/client';
@@ -76,6 +82,7 @@ export async function appendMessage(
     threadId,
     role: message.role,
     content: message.content,
+    parts: partsOf(message),
     position: (last?.position ?? 0) + 1,
     createdAt: Date.now(),
   });
@@ -89,12 +96,21 @@ export async function appendMessage(
 
 export async function readMessages(threadId: string): Promise<AiMessage[]> {
   const rows = await db
-    .select({ role: coachMessages.role, content: coachMessages.content })
+    .select({ role: coachMessages.role, content: coachMessages.content, parts: coachMessages.parts })
     .from(coachMessages)
     .where(eq(coachMessages.threadId, threadId))
     .orderBy(asc(coachMessages.position));
 
-  return rows.map((row) => ({ role: row.role, content: row.content }));
+  return rows.map((row) => ({ role: row.role, content: row.content, ...row.parts }));
+}
+
+/** The tool traffic worth a column, or null so an ordinary turn stores nothing extra. */
+function partsOf(message: AiMessage): CoachMessageParts | null {
+  const parts: CoachMessageParts = {};
+  if (message.toolCalls?.length) parts.toolCalls = message.toolCalls;
+  if (message.toolResults?.length) parts.toolResults = message.toolResults;
+  if (message.reasoning) parts.reasoning = message.reasoning;
+  return Object.keys(parts).length > 0 ? parts : null;
 }
 
 export async function listThreads(kind: CoachThreadKind): Promise<CoachThread[]> {

@@ -26,6 +26,49 @@ export type AiRole = 'user' | 'assistant';
 export interface AiMessage {
   role: AiRole;
   content: string;
+  /**
+   * Assistant turns only: the lookups the model asked for before it would
+   * answer. The turn after one of these is always a user turn carrying the
+   * matching `toolResults`, because both providers reject a conversation where
+   * a call goes unanswered.
+   */
+  toolCalls?: AiToolCall[];
+  /** User turns only: what the app found for the previous turn's `toolCalls`. */
+  toolResults?: AiToolResult[];
+  /**
+   * DeepSeek's thinking mode only. Its reasoning has to be handed back with the
+   * tool calls it led to, inside the same exchange, or the follow-up request is
+   * refused. Never shown and never sent to any provider that did not emit it.
+   */
+  reasoning?: string;
+}
+
+/**
+ * Something the model can ask the app to look up.
+ *
+ * `parameters` is a JSON Schema object. Both providers take the same schema
+ * under different keys, so it is stored once in the shape they agree on.
+ */
+export interface AiTool {
+  name: string;
+  description: string;
+  parameters: Record<string, unknown>;
+}
+
+export interface AiToolCall {
+  /** The provider's id for the call, echoed back on the result. */
+  id: string;
+  name: string;
+  /** Parsed arguments. `{}` when the model sent something that was not JSON. */
+  input: Record<string, unknown>;
+}
+
+export interface AiToolResult {
+  callId: string;
+  name: string;
+  /** What the model reads. Plain text, figures already formatted. */
+  content: string;
+  isError?: boolean;
 }
 
 /**
@@ -52,6 +95,8 @@ export interface AiRequest {
    */
   cacheFirstMessage?: boolean;
   temperature?: number;
+  /** Lookups the model may make before answering. Omitted means none. */
+  tools?: AiTool[];
 }
 
 /** Where the request is going, and who is paying for it. */
@@ -92,7 +137,9 @@ export const AI_PROVIDER_LABELS: Record<AiProvider, string> = {
  */
 export const DEFAULT_AI_MODELS: Record<AiProvider, string> = {
   anthropic: 'claude-sonnet-4-5',
-  deepseek: 'deepseek-chat',
+  // `deepseek-chat` was retired on 2026-07-24. `deepseek-flash` is the
+  // cheaper of the two current models and the one that takes tool calls.
+  deepseek: 'deepseek-flash',
   'openai-compatible': 'gpt-4o-mini',
 };
 
@@ -114,6 +161,9 @@ export const DEFAULT_BASE_URLS: Record<AiProvider, string> = {
  * is chosen from it, and the briefs are in this package. Persisted as a string
  * in `coach_threads.kind`, so members are added and never renamed.
  */
+/** What a stored turn keeps beside its text. See `coach_messages.parts`. */
+export type CoachMessageParts = Pick<AiMessage, 'toolCalls' | 'toolResults' | 'reasoning'>;
+
 export const COACH_THREAD_KINDS = ['review', 'session', 'advice', 'stats'] as const;
 export type CoachThreadKind = (typeof COACH_THREAD_KINDS)[number];
 

@@ -13,7 +13,13 @@
  * the caller, because that is where the chunks are.
  */
 
-import { DEFAULT_BASE_URLS, type AiConfig, type AiRequest } from './messages.ts';
+import {
+  DEFAULT_BASE_URLS,
+  type AiConfig,
+  type AiMessage,
+  type AiRequest,
+  type AiToolCall,
+} from './messages.ts';
 
 /** A request, reduced to the three things `fetch` wants. */
 export interface WireRequest {
@@ -32,6 +38,15 @@ export interface WireRequest {
  */
 export type SseEvent =
   | { kind: 'delta'; text: string }
+  /**
+   * A tool call opening. `index` is the provider's position for it within this
+   * turn, and is how the argument fragments that follow find their call.
+   */
+  | { kind: 'tool-start'; index: number; id: string; name: string }
+  /** A fragment of a tool call's JSON arguments. Only whole once the turn ends. */
+  | { kind: 'tool-delta'; index: number; json: string }
+  /** DeepSeek's thinking-mode reasoning. Kept for the tool round trip, never shown. */
+  | { kind: 'reasoning'; text: string }
   | { kind: 'done' }
   | { kind: 'error'; message: string };
 
@@ -89,14 +104,17 @@ function anthropicRequest(config: AiConfig, request: AiRequest): WireRequest {
     // anything else would spend a cache write on text that never repeats.
     const cacheable = request.cacheFirstMessage === true && index === 0;
 
-    return {
-      role: message.role,
-      content: cacheable
-        ? [{ type: 'text', text: message.content, cache_control: { type: 'ephemeral' } }]
-        : message.content,
-    };
-  });
+    if (!message.toolCalls?.length && !message.toolResults?.length) {
+      return {
+        role: message.role,
+        content: cacheable
+          ? [{ type: 'text', text: message.content, cache_control: { type: 'ephemeral' } }]
+          : message.content,
+      };
+    }
 
+    return { role: message.role, content: anthropicBlocks(message) };
+  });
   return {
     url: `${base}/messages`,
     headers: {
@@ -125,8 +143,46 @@ function anthropicRequest(config: AiConfig, request: AiRequest): WireRequest {
       messages,
       stream: true,
       ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
+      ...(request.tools?.length
+        ? {
+            tools: request.tools.map((tool) => ({
+              name: tool.name,
+              description: tool.description,
+              input_schema: tool.parameters,
+            })),
+          }
+        : {}),
     }),
   };
+}
+
+/**
+ * A turn that carries tool traffic, as Anthropic content blocks.
+ *
+ * Results go first in a user turn: Anthropic requires every `tool_result` to
+ * lead the message that follows the call, and text placed before them is
+ * refused.
+ */
+function anthropicBlocks(message: AiMessage): Record<string, unknown>[] {
+  const blocks: Record<string, unknown>[] = [];
+
+  for (const result of message.toolResults ?? []) {
+    blocks.push({
+      type: 'tool_result',
+      tool_use_id: result.callId,
+      content: result.content,
+      ...(result.isError ? { is_error: true } : {}),
+    });
+  }
+
+  // An empty text block is a 400, so a turn that is only tool traffic has none.
+  if (message.content.length > 0) blocks.push({ type: 'text', text: message.content });
+
+  for (const call of message.toolCalls ?? []) {
+    blocks.push({ type: 'tool_use', id: call.id, name: call.name, input: call.input });
+  }
+
+  return blocks;
 }
 
 function openAiRequest(config: AiConfig, request: AiRequest): WireRequest {
@@ -153,12 +209,57 @@ function openAiRequest(config: AiConfig, request: AiRequest): WireRequest {
       max_tokens: request.maxOutputTokens,
       messages: [
         { role: 'system', content: request.system },
-        ...request.messages.map((message) => ({ role: message.role, content: message.content })),
+        ...request.messages.flatMap(openAiMessages),
       ],
       stream: true,
       ...(request.temperature === undefined ? {} : { temperature: request.temperature }),
+      ...(request.tools?.length
+        ? {
+            tools: request.tools.map((tool) => ({
+              type: 'function',
+              function: { name: tool.name, description: tool.description, parameters: tool.parameters },
+            })),
+          }
+        : {}),
     }),
   };
+}
+
+/**
+ * One neutral turn as OpenAI messages, which may be several.
+ *
+ * Results are not part of a user message in this dialect: each is its own
+ * `tool` message, in the order the calls were made. A user turn that carried
+ * only results therefore produces no `user` message at all.
+ */
+function openAiMessages(message: AiMessage): Record<string, unknown>[] {
+  if (message.role === 'user') {
+    const results = (message.toolResults ?? []).map((result) => ({
+      role: 'tool',
+      tool_call_id: result.callId,
+      content: result.content,
+    }));
+    return message.content.length > 0 || results.length === 0
+      ? [...results, { role: 'user', content: message.content }]
+      : results;
+  }
+
+  if (!message.toolCalls?.length) return [{ role: 'assistant', content: message.content }];
+
+  return [
+    {
+      role: 'assistant',
+      // `null` rather than an empty string: several servers refuse an assistant
+      // message whose content is `""` alongside tool calls.
+      content: message.content.length > 0 ? message.content : null,
+      ...(message.reasoning ? { reasoning_content: message.reasoning } : {}),
+      tool_calls: message.toolCalls.map((call) => ({
+        id: call.id,
+        type: 'function',
+        function: { name: call.name, arguments: JSON.stringify(call.input) },
+      })),
+    },
+  ];
 }
 
 // ---------------------------------------------------------------------------
@@ -175,18 +276,30 @@ function openAiRequest(config: AiConfig, request: AiRequest): WireRequest {
  * middle of a sentence.
  */
 export function decodeSseLine(config: AiConfig, line: string): SseEvent | null {
+  return decodeSseFrame(config, line)[0] ?? null;
+}
+
+/**
+ * Everything one complete SSE line meant, in order.
+ *
+ * Usually zero or one event. An OpenAI frame can carry text, several tool-call
+ * fragments and a finish reason at once, and reporting only the first of them
+ * would lose the rest. `decodeSseLine` is this, cut to its first event, for
+ * callers that only ever read text.
+ */
+export function decodeSseFrame(config: AiConfig, line: string): SseEvent[] {
   const trimmed = line.trimEnd();
-  if (trimmed.length === 0) return null;
+  if (trimmed.length === 0) return [];
 
   // `event:` names and `:` keep-alive comments. Both providers repeat the event
   // name inside the payload, so the payload is the single source read here.
-  if (!trimmed.startsWith('data:')) return null;
+  if (!trimmed.startsWith('data:')) return [];
 
   const payload = trimmed.slice('data:'.length).trim();
-  if (payload.length === 0) return null;
+  if (payload.length === 0) return [];
 
   // OpenAI's end sentinel is not JSON and must be tested before parsing.
-  if (payload === '[DONE]') return { kind: 'done' };
+  if (payload === '[DONE]') return [{ kind: 'done' }];
 
   let parsed: unknown;
   try {
@@ -196,23 +309,40 @@ export function decodeSseLine(config: AiConfig, line: string): SseEvent | null {
     // something undocumented. Skipping it keeps a stream alive that is very
     // probably still fine, where throwing would lose an answer already part
     // written on screen.
-    return null;
+    return [];
   }
 
-  if (parsed === null || typeof parsed !== 'object') return null;
+  if (parsed === null || typeof parsed !== 'object') return [];
 
-  return config.provider === 'anthropic'
-    ? decodeAnthropic(parsed as Record<string, unknown>)
-    : decodeOpenAi(parsed as Record<string, unknown>);
+  if (config.provider === 'anthropic') {
+    const event = decodeAnthropic(parsed as Record<string, unknown>);
+    return event ? [event] : [];
+  }
+  return decodeOpenAi(parsed as Record<string, unknown>);
 }
 
 function decodeAnthropic(event: Record<string, unknown>): SseEvent | null {
   switch (event.type) {
+    case 'content_block_start': {
+      const block = event.content_block as Record<string, unknown> | undefined;
+      if (block?.type !== 'tool_use' || typeof event.index !== 'number') return null;
+      return {
+        kind: 'tool-start',
+        index: event.index,
+        id: stringOr(block.id, `call_${event.index}`),
+        name: stringOr(block.name, ''),
+      };
+    }
     case 'content_block_delta': {
       const delta = event.delta as Record<string, unknown> | undefined;
-      // `thinking_delta` and `input_json_delta` share this event and are not
-      // answer text. Reading `delta.text` unconditionally would splice a
-      // model's reasoning into the reply.
+      if (delta?.type === 'input_json_delta' && typeof event.index === 'number') {
+        return typeof delta.partial_json === 'string'
+          ? { kind: 'tool-delta', index: event.index, json: delta.partial_json }
+          : null;
+      }
+      // `thinking_delta` shares this event and is not answer text. Reading
+      // `delta.text` unconditionally would splice a model's reasoning into the
+      // reply.
       if (delta?.type !== 'text_delta') return null;
       return typeof delta.text === 'string' ? { kind: 'delta', text: delta.text } : null;
     }
@@ -228,31 +358,51 @@ function decodeAnthropic(event: Record<string, unknown>): SseEvent | null {
   }
 }
 
-function decodeOpenAi(event: Record<string, unknown>): SseEvent | null {
+function decodeOpenAi(event: Record<string, unknown>): SseEvent[] {
   // Some gateways report a failure mid-stream as an ordinary data frame rather
   // than as an HTTP status, because the status was already sent as 200.
   if (event.error !== undefined && event.error !== null) {
     const error = event.error as Record<string, unknown>;
-    return { kind: 'error', message: stringOr(error.message, 'The model reported an error.') };
+    return [{ kind: 'error', message: stringOr(error.message, 'The model reported an error.') }];
   }
 
   const choices = event.choices;
-  if (!Array.isArray(choices) || choices.length === 0) return null;
+  if (!Array.isArray(choices) || choices.length === 0) return [];
 
   const choice = choices[0] as Record<string, unknown>;
   const delta = choice.delta as Record<string, unknown> | undefined;
-  const text = delta?.content;
+  const events: SseEvent[] = [];
 
-  if (typeof text === 'string' && text.length > 0) return { kind: 'delta', text };
-
-  // A `finish_reason` closes the stream on servers that never send `[DONE]`,
-  // which includes some OpenAI-compatible proxies. Reported after the delta
-  // check because the final frame can legitimately carry both.
-  if (typeof choice.finish_reason === 'string' && choice.finish_reason.length > 0) {
-    return { kind: 'done' };
+  if (typeof delta?.reasoning_content === 'string' && delta.reasoning_content.length > 0) {
+    events.push({ kind: 'reasoning', text: delta.reasoning_content });
   }
 
-  return null;
+  const text = delta?.content;
+  if (typeof text === 'string' && text.length > 0) events.push({ kind: 'delta', text });
+
+  if (Array.isArray(delta?.tool_calls)) {
+    for (const raw of delta.tool_calls as Record<string, unknown>[]) {
+      // The first fragment of a call carries its id and name; the rest carry
+      // only the index and more of the arguments.
+      const index = typeof raw.index === 'number' ? raw.index : 0;
+      const fn = raw.function as Record<string, unknown> | undefined;
+      if (typeof raw.id === 'string' && raw.id.length > 0) {
+        events.push({ kind: 'tool-start', index, id: raw.id, name: stringOr(fn?.name, '') });
+      }
+      if (typeof fn?.arguments === 'string' && fn.arguments.length > 0) {
+        events.push({ kind: 'tool-delta', index, json: fn.arguments });
+      }
+    }
+  }
+
+  // A `finish_reason` closes the stream on servers that never send `[DONE]`,
+  // which includes some OpenAI-compatible proxies. Reported last because the
+  // final frame can legitimately carry a delta as well.
+  if (typeof choice.finish_reason === 'string' && choice.finish_reason.length > 0) {
+    events.push({ kind: 'done' });
+  }
+
+  return events;
 }
 
 function stringOr(value: unknown, fallback: string): string {
@@ -289,12 +439,7 @@ export function createSseDecoder(config: AiConfig): {
       const lines = buffer.split('\n');
       buffer = lines.pop() ?? '';
 
-      const events: SseEvent[] = [];
-      for (const line of lines) {
-        const event = decodeSseLine(config, line);
-        if (event) events.push(event);
-      }
-      return events;
+      return lines.flatMap((line) => decodeSseFrame(config, line));
     },
 
     flush(): SseEvent[] {
@@ -302,8 +447,59 @@ export function createSseDecoder(config: AiConfig): {
       buffer = '';
       if (rest.trim().length === 0) return [];
 
-      const event = decodeSseLine(config, rest);
-      return event ? [event] : [];
+      return decodeSseFrame(config, rest);
     },
   };
+}
+
+/**
+ * Assembles tool calls out of the fragments a stream delivers them in.
+ *
+ * Arguments arrive as pieces of a JSON string, keyed by the call's position in
+ * the turn, and are only parseable once the turn has ended. A call whose
+ * arguments never became valid JSON is kept with `{}` rather than dropped: the
+ * provider still expects an answer to it, and the lookup reports what was
+ * missing in words the model can act on.
+ */
+export function createToolCallCollector(): {
+  push: (event: SseEvent) => void;
+  finish: () => AiToolCall[];
+} {
+  const calls = new Map<number, { id: string; name: string; json: string }>();
+
+  return {
+    push(event) {
+      if (event.kind === 'tool-start') {
+        const existing = calls.get(event.index);
+        calls.set(event.index, {
+          id: event.id,
+          name: event.name || existing?.name || '',
+          json: existing?.json ?? '',
+        });
+      } else if (event.kind === 'tool-delta') {
+        const existing = calls.get(event.index) ?? { id: `call_${event.index}`, name: '', json: '' };
+        existing.json += event.json;
+        calls.set(event.index, existing);
+      }
+    },
+
+    finish() {
+      return [...calls.entries()]
+        .sort(([a], [b]) => a - b)
+        .filter(([, call]) => call.name.length > 0)
+        .map(([, call]) => ({ id: call.id, name: call.name, input: parseArguments(call.json) }));
+    },
+  };
+}
+
+function parseArguments(json: string): Record<string, unknown> {
+  if (json.trim().length === 0) return {};
+  try {
+    const parsed: unknown = JSON.parse(json);
+    return parsed !== null && typeof parsed === 'object' && !Array.isArray(parsed)
+      ? (parsed as Record<string, unknown>)
+      : {};
+  } catch {
+    return {};
+  }
 }
