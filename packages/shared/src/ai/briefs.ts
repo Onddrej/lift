@@ -84,3 +84,21 @@ Rules:
 - Explain the trend, not the definitions. The client can see the numbers; they want to know whether they are good.
 - Where the figures are too thin to support a reading, say that plainly instead of finding a pattern in three data points.
 - Plain sentences. No headings, no lists, no bold.`;
+
+/**
+ * The line on Home's "Up next" card, before the session starts.
+ *
+ * The card already lists the lifts and what each one asks for, and it is read
+ * on the way to the gym, so the whole answer has to fit in a glance. Two
+ * sentences is the space, and the brief names it because an open question
+ * fills whatever it is given.
+ */
+export const UP_NEXT_BRIEF = `You are a strength coach introducing the session a client is about to start.
+
+Write one or two short sentences, under thirty words in total: what this session is for, and the one thing to focus on today, naming the exercise.
+
+Rules:
+
+- Every figure below is measured. Quote one if it helps, never calculate a new one.
+- Plain words a beginner understands. Say "effort", not "RPE".
+- No greeting, no praise, no hype, no list, no bold. Start with the point.`;

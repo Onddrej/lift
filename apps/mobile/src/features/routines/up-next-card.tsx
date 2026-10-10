@@ -17,32 +17,40 @@
  * draws nothing when there is no suggestion (fewer than two routines, or every
  * one trained within the day) and nothing while a session is open, because the
  * tab bar's resume banner is already saying what the user is in the middle of.
+ *
+ * Kept to one glance: the lifts are a single line rather than a table, and the
+ * card can be put away for the day. With the AI coach on, it also carries a
+ * line or two about the session, written once a day (see `up-next-intro`).
  */
 
+import { Ionicons } from '@expo/vector-icons';
 import { suggestNextRoutine, isWorkingSet } from '@lift/shared';
 import { and, asc, desc, isNotNull, isNull } from 'drizzle-orm';
 import { router } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
-import { Button, Card, PressableScale, Text } from '@/components/ui';
+import { Button, Card, IconButton, PressableScale, Text } from '@/components/ui';
 import { db } from '@/db/client';
 import { routines as routinesTable, workouts, type RoutineSet } from '@/db/schema';
 import { useRows } from '@/db/use-rows';
+import { useAppUnits } from '@/features/exercises/units';
 import { haptics } from '@/features/feedback/haptics';
 import { startWorkout } from '@/features/workouts/repository';
 import { startSession } from '@/features/workouts/start-session';
 import { useTicker } from '@/hooks/use-ticker';
-import { radius, spacing, stroke, useColors } from '@/theme';
+import { radius, spacing, useColors } from '@/theme';
 
 import { describeLastPerformed } from './recency';
 import { getRoutineDetail, type RoutineDetail } from './repository';
+import { upNextKey, useUpNextDismissal, useUpNextIntro } from './up-next-intro';
 
-/** Lifts listed before "N more". Three is the opening of a session, not its plan. */
+/** Lifts named before "+N". Three is the opening of a session, not its plan. */
 const PREVIEW_LIFTS = 3;
 
 export function UpNextCard({ style }: { style?: StyleProp<ViewStyle> }) {
   const colors = useColors();
+  const { weightUnit } = useAppUnits();
 
   const { rows: activeRows, loaded: activeLoaded } = useRows(
     db
@@ -123,7 +131,18 @@ export function UpNextCard({ style }: { style?: StyleProp<ViewStyle> }) {
   const [starting, setStarting] = useState(false);
 
   const shown = detail && detail.routine.id === routineId ? detail : null;
-  if (!suggestion || !shown) return null;
+
+  const reason = !suggestion
+    ? ''
+    : suggestion.basis === 'rotation'
+      ? `Usually follows ${suggestion.after}`
+      : describeLastPerformed(shown?.routine.lastPerformedAt ?? null, now);
+
+  const key = routineId ? upNextKey(routineId, now) : null;
+  const { dismissed, dismiss } = useUpNextDismissal(key);
+  const intro = useUpNextIntro(dismissed === false ? key : null, shown, reason, weightUnit);
+
+  if (!suggestion || !shown || dismissed !== false) return null;
 
   const { routine, exercises } = shown;
 
@@ -146,70 +165,67 @@ export function UpNextCard({ style }: { style?: StyleProp<ViewStyle> }) {
     }
   };
 
-  const reason =
-    suggestion.basis === 'rotation'
-      ? `Usually follows ${suggestion.after}`
-      : describeLastPerformed(routine.lastPerformedAt, now);
-
   const preview = exercises.slice(0, PREVIEW_LIFTS);
   const more = exercises.length - preview.length;
+  const lifts = [
+    ...preview.map(({ exercise, sets }) => `${exercise.name} ${describePrescription(sets)}`),
+    ...(more > 0 ? [`+${more}`] : []),
+  ].join('  ·  ');
 
   return (
     <Card padded={false} style={[styles.card, style]}>
-      <PressableScale
-        onPress={() => router.push({ pathname: '/routine/[id]', params: { id: routine.id } })}
-        accessibilityRole="button"
-        accessibilityLabel={`Up next: ${routine.name}. ${reason}`}
-        accessibilityHint="Opens the routine"
-        fill={colors.surface}
-        fillPressed={colors.surfacePressed}
-        // Runs the card's full width, so a scale would pull both edges in.
-        scaleTo={1}
-        style={styles.head}
-      >
-        <Text variant="overline" color="textTertiary">
-          Up next
-        </Text>
-        <Text variant="title" numberOfLines={1}>
-          {routine.name}
-        </Text>
-        <Text variant="label" color="textSecondary" numberOfLines={1} style={styles.reason}>
-          {`${exercises.length} ${exercises.length === 1 ? 'exercise' : 'exercises'} · ${reason}`}
-        </Text>
-      </PressableScale>
-
-      {preview.length > 0 && (
-        <View style={styles.lifts}>
-          {preview.map(({ routineExercise, exercise, sets }) => (
-            <View
-              key={routineExercise.id}
-              style={[styles.lift, { borderTopColor: colors.border }]}
-            >
-              <Text variant="body" numberOfLines={1} style={styles.liftName}>
-                {exercise.name}
-              </Text>
-              <Text variant="numeric" color="textSecondary">
-                {describePrescription(sets)}
-              </Text>
-            </View>
-          ))}
-          {more > 0 && (
-            <View style={[styles.lift, { borderTopColor: colors.border }]}>
-              <Text variant="body" color="textTertiary">
-                {`${more} more`}
-              </Text>
-            </View>
+      <View style={styles.top}>
+        <PressableScale
+          onPress={() => router.push({ pathname: '/routine/[id]', params: { id: routine.id } })}
+          accessibilityRole="button"
+          accessibilityLabel={`Up next: ${routine.name}. ${reason}`}
+          accessibilityHint="Opens the routine"
+          fill={colors.surface}
+          fillPressed={colors.surfacePressed}
+          scaleTo={1}
+          style={styles.head}
+        >
+          <Text variant="overline" color="textTertiary" numberOfLines={1}>
+            {`Up next  ·  ${reason}`}
+          </Text>
+          <Text variant="subheading" numberOfLines={1}>
+            {routine.name}
+          </Text>
+          {lifts.length > 0 && (
+            <Text variant="caption" color="textSecondary" numberOfLines={1}>
+              {lifts}
+            </Text>
           )}
+        </PressableScale>
+
+        {/* Gone for today, not for good: see `up-next-intro`. */}
+        <IconButton
+          name="close"
+          size={18}
+          color={colors.textTertiary}
+          onPress={() => {
+            haptics.selection();
+            dismiss();
+          }}
+          accessibilityLabel="Hide for today"
+          style={styles.close}
+        />
+      </View>
+
+      {/* The coach's line, only when the AI coach is on and has answered. The
+          card is whole without it, so it arrives as an addition, never a wait. */}
+      {intro && (
+        <View style={[styles.intro, { backgroundColor: colors.accentSurface }]}>
+          <Ionicons name="sparkles" size={14} color={colors.accent} style={styles.introIcon} />
+          <Text variant="caption" style={styles.introText}>
+            {intro}
+          </Text>
         </View>
       )}
 
-      {/*
-        The accent, and the only control on Home that starts anything. Large,
-        because it is the one thing on the screen most visits are for.
-      */}
+      {/* The accent, and the only control on Home that starts anything. */}
       <Button
         title={`Start ${routine.name}`}
-        size="lg"
         fullWidth
         loading={starting}
         onPress={() => void begin()}
@@ -239,17 +255,25 @@ function describePrescription(sets: readonly RoutineSet[]): string {
 
 const styles = StyleSheet.create({
   card: { overflow: 'hidden', borderRadius: radius.xl },
-  head: { paddingHorizontal: spacing.lg, paddingTop: spacing.lg, gap: spacing.xs },
-  reason: { marginTop: 2 },
-  lifts: { paddingHorizontal: spacing.lg, marginTop: spacing.md },
-  lift: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    gap: spacing.md,
-    paddingVertical: spacing.sm,
-    borderTopWidth: stroke.rule,
+  top: { flexDirection: 'row', alignItems: 'flex-start' },
+  head: {
+    flex: 1,
+    paddingLeft: spacing.lg,
+    paddingRight: spacing.xs,
+    paddingTop: spacing.md,
+    gap: 2,
   },
-  liftName: { flex: 1 },
-  start: { marginHorizontal: spacing.lg, marginTop: spacing.md, marginBottom: spacing.lg },
+  close: { marginTop: spacing.xs, marginRight: spacing.xs },
+  intro: {
+    flexDirection: 'row',
+    gap: spacing.sm,
+    marginHorizontal: spacing.lg,
+    marginTop: spacing.sm,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
+    borderRadius: radius.md,
+  },
+  introIcon: { marginTop: 2 },
+  introText: { flex: 1 },
+  start: { marginHorizontal: spacing.lg, marginTop: spacing.md, marginBottom: spacing.md },
 });
