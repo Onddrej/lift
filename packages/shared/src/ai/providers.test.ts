@@ -142,6 +142,28 @@ describe('buildRequest, OpenAI-compatible', () => {
   });
 });
 
+describe('buildRequest, DeepSeek', () => {
+  const DEEPSEEK: AiConfig = { provider: 'deepseek', model: 'deepseek-chat', apiKey: 'sk-test' };
+
+  it('defaults to DeepSeek\'s own host, never OpenAI\'s', () => {
+    // A named provider with no base URL set must not fall through to
+    // api.openai.com: that would send a DeepSeek key to a service that never
+    // issued it, and report the rejection as a wrong key.
+    const wire = buildRequest(DEEPSEEK, REQUEST);
+    assert.equal(wire.url, 'https://api.deepseek.com/v1/chat/completions');
+    assert.equal(wire.headers.authorization, 'Bearer sk-test');
+  });
+
+  it('reads answers in the OpenAI dialect', () => {
+    // DeepSeek's stream is the chat-completions shape, `data: [DONE]` and all,
+    // so the same decoder serves both. This locks that in: a regression that
+    // keyed decoding on the provider name would silently drop every delta.
+    const line = 'data: {"choices":[{"delta":{"content":"Side delts"},"index":0}]}';
+    assert.deepEqual(decodeSseLine(DEEPSEEK, line), { kind: 'delta', text: 'Side delts' });
+    assert.deepEqual(decodeSseLine(DEEPSEEK, 'data: [DONE]'), { kind: 'done' });
+  });
+});
+
 describe('decodeSseLine, lines that mean nothing', () => {
   const noise = ['', '   ', 'event: content_block_delta', ': keep-alive', 'data:', 'data: {'];
 

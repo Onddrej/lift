@@ -13,7 +13,7 @@
  * the caller, because that is where the chunks are.
  */
 
-import type { AiConfig, AiRequest } from './messages.ts';
+import { DEFAULT_BASE_URLS, type AiConfig, type AiRequest } from './messages.ts';
 
 /** A request, reduced to the three things `fetch` wants. */
 export interface WireRequest {
@@ -130,7 +130,11 @@ function anthropicRequest(config: AiConfig, request: AiRequest): WireRequest {
 }
 
 function openAiRequest(config: AiConfig, request: AiRequest): WireRequest {
-  const base = apiRoot(config.baseUrl || 'https://api.openai.com');
+  // The default has to come from the provider, not be hardcoded to OpenAI:
+  // every named provider on this path (DeepSeek today) speaks the same dialect
+  // against its own host, and falling back to api.openai.com would send that
+  // provider's key to a service it was never issued by.
+  const base = apiRoot(config.baseUrl || DEFAULT_BASE_URLS[config.provider]);
 
   return {
     url: `${base}/chat/completions`,
