@@ -10,11 +10,12 @@
  */
 
 import { Ionicons } from '@expo/vector-icons';
-import { forwardRef, useState } from 'react';
+import { forwardRef, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, TextInput, View } from 'react-native';
+import Animated, { interpolateColor, useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
 
-import { Text } from '@/components/ui';
-import { font, fontSize, HIT_SLOP, radius, spacing, stroke, useColors } from '@/theme';
+import { popIn, PressableScale, Text } from '@/components/ui';
+import { font, fontSize, HIT_SLOP, PRESS_SCALE_SMALL, radius, spacing, stroke, timing, useColors } from '@/theme';
 
 export interface ComposerProps {
   value: string;
@@ -38,6 +39,17 @@ export const Composer = forwardRef<TextInput, ComposerProps>(function Composer(
   const colors = useColors();
   const [focused, setFocused] = useState(false);
   const canSend = !pending && !disabled && value.trim().length > 0;
+
+  // The corner control lights up as the first character lands and goes dark
+  // when the box is cleared. A crossfade, not a cut: it happens under the eye,
+  // on every keystroke that crosses the line.
+  const lit = useSharedValue(canSend ? 1 : 0);
+  useEffect(() => {
+    lit.set(withTiming(canSend ? 1 : 0, timing.state));
+  }, [canSend, lit]);
+  const fill = useAnimatedStyle(() => ({
+    backgroundColor: interpolateColor(lit.get(), [0, 1], [colors.surfaceMuted, colors.accent]),
+  }));
 
   return (
     <View
@@ -84,31 +96,25 @@ export const Composer = forwardRef<TextInput, ComposerProps>(function Composer(
           <View />
         )}
 
-        <Pressable
+        <PressableScale
           onPress={pending ? onStop : onSend}
           disabled={!pending && !canSend}
           hitSlop={HIT_SLOP}
+          scaleTo={PRESS_SCALE_SMALL}
           accessibilityRole="button"
           accessibilityLabel={pending ? 'Stop the answer' : 'Send'}
-          style={({ pressed }) => [
-            styles.send,
-            {
-              backgroundColor: pending
-                ? colors.surfaceMuted
-                : canSend
-                  ? pressed
-                    ? colors.accentPressed
-                    : colors.accent
-                  : colors.surfaceMuted,
-            },
-          ]}
         >
-          <Ionicons
-            name={pending ? 'stop' : 'arrow-up'}
-            size={pending ? 14 : 18}
-            color={pending ? colors.text : canSend ? colors.textOnAccent : colors.textTertiary}
-          />
-        </Pressable>
+          <Animated.View style={[styles.send, fill]}>
+            {/* Keyed so send and stop swap with a small pop rather than a cut. */}
+            <Animated.View key={pending ? 'stop' : 'send'} entering={popIn}>
+              <Ionicons
+                name={pending ? 'stop' : 'arrow-up'}
+                size={pending ? 14 : 18}
+                color={pending ? colors.text : canSend ? colors.textOnAccent : colors.textTertiary}
+              />
+            </Animated.View>
+          </Animated.View>
+        </PressableScale>
       </View>
     </View>
   );

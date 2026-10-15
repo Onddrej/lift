@@ -12,7 +12,7 @@ import { parseCoachReply, type CoachSegment } from '@lift/shared';
 import { useMemo } from 'react';
 import { StyleSheet, View } from 'react-native';
 
-import { Chip, Text } from '@/components/ui';
+import { Chip, Reveal, Text } from '@/components/ui';
 import { spacing } from '@/theme';
 
 import { ExerciseCard } from './cards/exercise-card';
@@ -25,10 +25,13 @@ export interface CoachReplyProps {
   /** Whether this reply's choices are live. True for the latest settled reply only. */
   interactive: boolean;
   onChoose: (option: string) => void;
+  /** Still being written: the last line of prose carries a cursor. */
+  streaming?: boolean;
 }
 
-export function CoachReply({ text, interactive, onChoose }: CoachReplyProps) {
+export function CoachReply({ text, interactive, onChoose, streaming = false }: CoachReplyProps) {
   const segments = useMemo(() => parseCoachReply(text), [text]);
+  const last = segments.length - 1;
 
   // Pinned against Fabric's view flattening: layout-only, and its children
   // change on every streamed token.
@@ -40,6 +43,7 @@ export function CoachReply({ text, interactive, onChoose }: CoachReplyProps) {
           segment={segment}
           interactive={interactive}
           onChoose={onChoose}
+          cursor={streaming && index === last}
         />
       ))}
     </View>
@@ -50,12 +54,14 @@ function Segment({
   segment,
   interactive,
   onChoose,
+  cursor,
 }: {
   segment: CoachSegment;
   interactive: boolean;
   onChoose: (option: string) => void;
+  cursor: boolean;
 }) {
-  if (segment.kind === 'text') return <RichText text={segment.text} />;
+  if (segment.kind === 'text') return <RichText text={segment.text} cursor={cursor} />;
 
   if (segment.kind === 'pending') {
     return (
@@ -79,8 +85,11 @@ function Segment({
           {card.question && <Text variant="bodyMedium">{card.question}</Text>}
           {interactive && (
             <View style={styles.chips}>
-              {card.options.map((option) => (
-                <Chip key={option} label={option} onPress={() => onChoose(option)} />
+              {/* They arrive once the answer has settled, as one group in order. */}
+              {card.options.map((option, index) => (
+                <Reveal key={option} index={index}>
+                  <Chip label={option} onPress={() => onChoose(option)} />
+                </Reveal>
               ))}
             </View>
           )}

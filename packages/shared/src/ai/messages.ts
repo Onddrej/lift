@@ -94,6 +94,14 @@ export interface AiRequest {
    * means the training document and nothing else.
    */
   cacheFirstMessage?: boolean;
+  /**
+   * The same, for a document that rode in on a later turn.
+   *
+   * A chat that opens with "hi" sends the log with the first real question
+   * instead, so the turn worth caching is wherever that landed. Everything
+   * before it is cached with it, which is a prefix of a few short turns.
+   */
+  cacheMessageAt?: number;
   temperature?: number;
   /** Lookups the model may make before answering. Omitted means none. */
   tools?: AiTool[];

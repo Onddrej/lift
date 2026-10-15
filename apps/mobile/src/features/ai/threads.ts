@@ -19,7 +19,7 @@ import {
   type CoachMessageParts,
   type CoachThreadKind,
 } from '@lift/shared';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 
 import { db } from '@/db/client';
 import { coachMessages, coachThreads } from '@/db/schema';
@@ -102,6 +102,27 @@ export async function readMessages(threadId: string): Promise<AiMessage[]> {
     .orderBy(asc(coachMessages.position));
 
   return rows.map((row) => ({ role: row.role, content: row.content, ...row.parts }));
+}
+
+/**
+ * Drops every turn from `index` on, counted the way `readMessages` returns them.
+ *
+ * For "try again": the answer being replaced has to leave the database too, or
+ * reopening the thread would show both and send both.
+ */
+export async function deleteMessagesFrom(threadId: string, index: number): Promise<void> {
+  const rows = await db
+    .select({ id: coachMessages.id })
+    .from(coachMessages)
+    .where(eq(coachMessages.threadId, threadId))
+    .orderBy(asc(coachMessages.position));
+
+  const doomed = rows.slice(index).map((row) => row.id);
+  if (doomed.length > 0) await db.delete(coachMessages).where(inArray(coachMessages.id, doomed));
+}
+
+export async function renameThread(threadId: string, title: string): Promise<void> {
+  await db.update(coachThreads).set({ title }).where(eq(coachThreads.id, threadId));
 }
 
 /** The tool traffic worth a column, or null so an ordinary turn stores nothing extra. */

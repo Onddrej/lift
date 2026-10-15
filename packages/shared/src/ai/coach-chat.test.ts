@@ -2,13 +2,17 @@ import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
 import {
+  carriesCoachLog,
   COACH_TOOL_NAMES,
   COACH_TOOLS,
   coachChatBrief,
+  coachTurnText,
   describeToolCall,
+  isSmallTalk,
   lastChoices,
   parseCoachReply,
   parseRichText,
+  withCoachLog,
 } from './coach-chat.ts';
 
 describe('parseCoachReply', () => {
@@ -207,5 +211,43 @@ describe('the brief and the tools', () => {
       'Read your Squat history',
     );
     assert.equal(describeToolCall({ id: '2', name: 'nonsense', input: {} }), 'Looked something up');
+  });
+});
+
+describe('isSmallTalk', () => {
+  it('lets greetings and thanks go without the log', () => {
+    for (const text of ['hi', 'Hey coach!', 'good morning', "what's up", 'thanks a lot', 'ok cool', '👋', 'how are you doing?']) {
+      assert.equal(isSmallTalk(text), true, text);
+    }
+  });
+
+  it('sends the log with anything about training', () => {
+    for (const text of ['PRs?', 'hi, how is my bench going', 'check in', 'thanks, now plan my week', 'how much should I squat', '', '100']) {
+      assert.equal(isSmallTalk(text), false, text);
+    }
+  });
+});
+
+describe('the log in a turn', () => {
+  it('round-trips the question out of a tagged turn', () => {
+    const turn = withCoachLog('## About me\n\n- Weights are in kg.', 'How is my squat?');
+    assert.equal(carriesCoachLog(turn), true);
+    assert.equal(coachTurnText(turn), 'How is my squat?');
+  });
+
+  it('still reads the question out of a thread from before the tags', () => {
+    const turn = '## About me\n\n- Weights are in kg.\n\nHow is my squat?';
+    assert.equal(carriesCoachLog(turn), true);
+    assert.equal(coachTurnText(turn), 'How is my squat?');
+  });
+
+  it('leaves an ordinary turn alone', () => {
+    assert.equal(carriesCoachLog('hi'), false);
+    assert.equal(coachTurnText('hi'), 'hi');
+  });
+
+  it('tells the model which way the log is coming', () => {
+    assert.match(coachChatBrief('kg'), /training_log/);
+    assert.match(coachChatBrief('kg', { withLog: false }), /has not been attached/);
   });
 });

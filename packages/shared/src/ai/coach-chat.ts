@@ -37,8 +37,13 @@ import type { AiTool, AiToolCall } from './messages.ts';
  * American who taps "Save as routine" gets bench targets two and a fifth times
  * lighter than they meant.
  */
-export function coachChatBrief(unit: 'kg' | 'lb'): string {
-  return `You are Lift's coach: an experienced strength and hypertrophy coach talking with a client inside their workout app. The first message is a real export of their training. You can read more of their log with the tools provided.
+export function coachChatBrief(unit: 'kg' | 'lb', options: { withLog?: boolean } = {}): string {
+  const opening =
+    options.withLog === false
+      ? `You are Lift's coach: an experienced strength and hypertrophy coach talking with a client inside their workout app. The client has only made small talk so far, so their training export has not been attached yet. Reply in one or two warm sentences and offer where to start. If they do ask about their training, read what you need with the tools provided rather than guessing.`
+      : `You are Lift's coach: an experienced strength and hypertrophy coach talking with a client inside their workout app. One of the client's messages carries a real export of their training, between <training_log> tags. You can read more of their log with the tools provided.`;
+
+  return `${opening}
 
 How you talk:
 
@@ -69,6 +74,86 @@ When asked for a check-in, give a check-in, not a review: two to four sentences 
 When asked for a full review, cover in order, briefly, with a bold label for each: what this block was, what is working, what is holding them back, which lifts moved and which stalled, fixes to their routines as plan cards, and what you could not tell from the data.
 
 Tools: the export already covers its window, so do not look up what is in front of you. Use exercise_history for anything older or longer than the window, workout_detail to read one session in full, find_exercises to check names, and the rest as named. Look things up before you answer, not after.`;
+}
+
+// ---------------------------------------------------------------------------
+// The log, and when to send it
+// ---------------------------------------------------------------------------
+
+const LOG_OPEN = '<training_log>';
+const LOG_CLOSE = '</training_log>';
+
+/**
+ * How a thread from before the tags began: the document's first heading.
+ *
+ * Those threads put the bare document at the head of the first turn, with the
+ * question after its last blank line.
+ */
+const LEGACY_LOG_HEAD = '## About me';
+
+/**
+ * A user turn that carries the training document ahead of the question.
+ *
+ * Tagged so the screen can find the question again whichever turn the log
+ * rode in on: it is no longer always the first, because small talk goes out
+ * without it.
+ */
+export function withCoachLog(document: string, question: string): string {
+  return `${LOG_OPEN}\n${document}\n${LOG_CLOSE}\n\n${question}`;
+}
+
+/** Whether a user turn carries the training document. */
+export function carriesCoachLog(content: string): boolean {
+  return content.startsWith(LOG_OPEN) || content.startsWith(LEGACY_LOG_HEAD);
+}
+
+/** What the user actually typed, out of a turn that may carry the log ahead of it. */
+export function coachTurnText(content: string): string {
+  if (content.startsWith(LOG_OPEN)) {
+    const end = content.indexOf(LOG_CLOSE);
+    return end === -1 ? '' : content.slice(end + LOG_CLOSE.length).trim();
+  }
+  if (content.startsWith(LEGACY_LOG_HEAD)) {
+    const cut = content.lastIndexOf('\n\n');
+    return cut === -1 ? content : content.slice(cut + 2);
+  }
+  return content;
+}
+
+/**
+ * Every word a greeting, a thanks or an acknowledgement is made of.
+ *
+ * Deliberately a closed list rather than a length cut-off: "PRs?" is short and
+ * needs the log, "hey coach, how are you doing" is long and does not.
+ */
+const SMALL_TALK_WORDS = new Set([
+  'hi', 'hii', 'hiii', 'hello', 'helo', 'hey', 'heya', 'hiya', 'yo', 'sup', 'wassup', 'whats', 'what', 'up',
+  'howdy', 'gm', 'morning', 'afternoon', 'evening', 'night', 'good', 'there', 'coach', 'bro', 'man', 'mate',
+  'buddy', 'dude', 'thanks', 'thank', 'you', 'u', 'thx', 'ty', 'cheers', 'ok', 'okay', 'k', 'kk', 'cool',
+  'nice', 'great', 'awesome', 'perfect', 'got', 'it', 'sounds', 'bye', 'see', 'ya', 'later', 'how', 'are',
+  'r', 'is', 'doing', 'hows', 'going', 'lol', 'haha', 'sure', 'alright', 'so', 'much', 'a', 'lot', 'very',
+]);
+
+/**
+ * Whether a message is small talk that does not need the training log.
+ *
+ * The log is tens of thousands of tokens and the slowest part of a first
+ * answer, both to build and for the model to read. Sending it to answer "hi"
+ * is a few seconds of waiting and a few cents for a reply that never looks at
+ * it. It goes out with the first message that is about something.
+ */
+export function isSmallTalk(text: string): boolean {
+  const words = text
+    .toLowerCase()
+    .replace(/['\u2019]/g, '')
+    .replace(/[^a-z\s]/g, ' ')
+    .split(/\s+/)
+    .filter((word) => word.length > 0);
+
+  // Nothing but an emoji or a wave: still a greeting.
+  if (words.length === 0) return text.trim().length > 0 && !/\d/.test(text);
+  if (words.length > 6) return false;
+  return words.every((word) => SMALL_TALK_WORDS.has(word));
 }
 
 /**

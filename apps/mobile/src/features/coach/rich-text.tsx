@@ -14,16 +14,28 @@ import { StyleSheet, View } from 'react-native';
 import { Text } from '@/components/ui';
 import { spacing } from '@/theme';
 
-export function RichText({ text }: { text: string }) {
+export interface RichTextProps {
+  text: string;
+  /** Ends the last block with a cursor, while the text is still being written. */
+  cursor?: boolean;
+}
+
+export function RichText({ text, cursor = false }: RichTextProps) {
   const blocks = useMemo(() => parseRichText(text), [text]);
+  const last = blocks.length - 1;
 
   return (
     <View style={styles.blocks}>
       {blocks.map((block, index) => {
+        const tail = cursor && index === last ? <Cursor /> : null;
+
+        // Selectable so a long press offers Copy, which is how a line of advice
+        // leaves the app without a clipboard module.
         if (block.kind === 'heading') {
           return (
-            <Text key={index} variant="subheading">
+            <Text key={index} variant="subheading" selectable>
               {block.spans.map((span) => span.text).join('')}
+              {tail}
             </Text>
           );
         }
@@ -34,20 +46,31 @@ export function RichText({ text }: { text: string }) {
               <Text variant="body" color="textSecondary" style={styles.marker}>
                 {block.marker}
               </Text>
-              <Text variant="body" style={styles.bulletText}>
+              <Text variant="body" style={styles.bulletText} selectable>
                 <Spans spans={block.spans} />
+                {tail}
               </Text>
             </View>
           );
         }
 
         return (
-          <Text key={index} variant="body">
+          <Text key={index} variant="body" selectable>
             <Spans spans={block.spans} />
+            {tail}
           </Text>
         );
       })}
     </View>
+  );
+}
+
+/** Inline, so it sits after the last word rather than on a line of its own. */
+function Cursor() {
+  return (
+    <Text variant="body" color="accent">
+      {'\u2009\u25CF'}
+    </Text>
   );
 }
 

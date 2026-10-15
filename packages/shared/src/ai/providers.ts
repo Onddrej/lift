@@ -102,7 +102,8 @@ function anthropicRequest(config: AiConfig, request: AiRequest): WireRequest {
     // document: large, identical across every follow-up in a thread, and the
     // entire reason a second question costs a fraction of the first. Marking
     // anything else would spend a cache write on text that never repeats.
-    const cacheable = request.cacheFirstMessage === true && index === 0;
+    const cacheable =
+      (request.cacheFirstMessage === true && index === 0) || request.cacheMessageAt === index;
 
     if (!message.toolCalls?.length && !message.toolResults?.length) {
       return {
