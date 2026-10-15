@@ -77,6 +77,8 @@ USER node
 COPY --from=build --chown=node:node /deploy/node_modules ./node_modules
 COPY --from=build --chown=node:node /deploy/dist ./dist
 COPY --from=build --chown=node:node /app/apps/api/drizzle ./drizzle
+# The report PDF's typeface, read at runtime from beside `dist` like the migrations.
+COPY --from=build --chown=node:node /app/apps/api/assets ./assets
 
 EXPOSE 3000
 

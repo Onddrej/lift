@@ -122,18 +122,32 @@ export async function getSessionToken(): Promise<string | null> {
  * been authenticating the phone app all along.
  */
 export async function apiFetch<T>(path: string, body: unknown): Promise<T> {
+  return apiRequest<T>('POST', path, body);
+}
+
+/**
+ * The same, for any method. A 204 resolves with `undefined`.
+ *
+ * The three ways of proving who is calling are the ones described above, for
+ * the same reasons.
+ */
+export async function apiRequest<T>(
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  path: string,
+  body?: unknown,
+): Promise<T> {
   const token = await getSessionToken();
   const cookie = Platform.OS === 'web' ? null : authClient.getCookie();
 
   const response = await fetch(`${API_URL}${path}`, {
-    method: 'POST',
+    method,
     credentials: 'include',
     headers: {
-      'Content-Type': 'application/json',
+      ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}),
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
       ...(cookie ? { Cookie: cookie } : {}),
     },
-    body: JSON.stringify(body),
+    ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
   });
 
   if (!response.ok) {
@@ -141,6 +155,7 @@ export async function apiFetch<T>(path: string, body: unknown): Promise<T> {
     throw new SyncHttpError(response.status, text || response.statusText);
   }
 
+  if (response.status === 204) return undefined as T;
   return (await response.json()) as T;
 }
 

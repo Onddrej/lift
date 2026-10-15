@@ -153,7 +153,8 @@ On Dokploy:
    `EXPO_PUBLIC_API_URL`, the API's public URL as the browser will call it, and
    `NEXT_PUBLIC_SITE_URL`, the landing page's own public URL. All six are
    required; the stack refuses to start without them rather than inventing
-   defaults.
+   defaults. `TELEGRAM_BOT_TOKEN` is optional and turns on the Telegram bot
+   (see [Training reports and the Telegram bot](#training-reports-and-the-telegram-bot)).
 4. Add three domains, one per service:
 
    | Service   | Port   | What it is             |
@@ -237,6 +238,33 @@ do not align with network chunks, so the line buffering lives in
 `packages/shared/src/ai/providers.ts` as `createSseDecoder` rather than in the
 fetch loop, where it could not be tested without a socket. It is exercised at
 every chunk size from one byte up.
+
+## Training reports and the Telegram bot
+
+**The report.** Statistics opens a training report for the last week, month or
+three months: total moved, sessions, sets and reps against the period before,
+volume by day or week, top lifts, where the sets went, new records and a few
+notes worked out from the numbers. **Export PDF** turns it into a one-page,
+branded PDF and hands it to the share sheet (a download in a browser).
+
+The numbers come from `buildTrainingReport` and the page from `renderReportPdf`,
+both in `packages/shared/src/report/`. The PDF is drawn with pdf-lib in plain
+JavaScript rather than printed from HTML, because it has to come out of two
+places with no browser in common: the phone, where printing would need a native
+module and a new APK, and the API's Alpine image, where it would need Chromium.
+
+**The bot.** One Telegram bot for every user, run inside the API. Settings,
+Telegram, Connect opens a one-time `t.me` link; pressing Start there links the
+chat to the account. From then on it sends a line to get moving at the user's
+reminder time with where their week stands, last week's PDF every Monday, and
+answers `/week`, `/report`, `/streak` and `/quote` (or the same in plain words).
+No model is involved: every reply is worked out from the synced log, so the bot
+needs an account with sync on.
+
+To turn it on, create a bot with `/newbot` in [@BotFather](https://t.me/BotFather)
+and set `TELEGRAM_BOT_TOKEN` on the API. It long-polls, so there is no webhook or
+public URL to configure. Run a single API replica: two would fight over the same
+updates. Without the token the bot is off and the app's Telegram page says so.
 
 ## Over-the-air updates
 

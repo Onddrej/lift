@@ -8,6 +8,7 @@ import { DayStrip } from '@/features/analytics/day-strip';
 import { VolumeAdviceSection } from '@/features/ai/volume-advice-section';
 import { getMuscleBoard, type MuscleBoard } from '@/features/analytics/muscle-stats';
 import { VolumeLegend } from '@/features/analytics/volume-legend';
+import { ReportEntryCard } from '@/features/report/report-entry-card';
 import { addDays, startOfDay } from '@/features/analytics/windows';
 import { useDeferredFocusEffect } from '@/hooks/use-deferred-focus-effect';
 import { spacing, useContentWidth } from '@/theme';
@@ -157,6 +158,8 @@ export default function StatisticsScreen() {
          * good state is a blank space is a card that teaches people to skip it.
          */}
         <VolumeAdviceSection />
+
+        <ReportEntryCard />
 
         {/* A plain overline rather than `SectionHeader`, whose own 16px indent
             is right on screens that scroll edge to edge and wrong here: this

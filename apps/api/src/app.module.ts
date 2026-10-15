@@ -2,6 +2,7 @@ import { Controller, Get, Module } from '@nestjs/common';
 
 import { sql } from './db/client.js';
 import { SyncModule } from './sync/sync.module.js';
+import { TelegramModule } from './telegram/telegram.module.js';
 
 @Controller()
 class HealthController {
@@ -20,7 +21,7 @@ class HealthController {
 }
 
 @Module({
-  imports: [SyncModule],
+  imports: [SyncModule, TelegramModule],
   controllers: [HealthController],
 })
 export class AppModule {}

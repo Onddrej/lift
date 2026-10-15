@@ -399,6 +399,51 @@ export const syncPurgeWatermarks = pgTable('sync_purge_watermarks', {
 });
 
 // ---------------------------------------------------------------------------
+// Telegram
+// ---------------------------------------------------------------------------
+
+/**
+ * One row per user who has asked for the Telegram bot.
+ *
+ * Written when the app asks to connect, with a one-time `linkCode`; completed
+ * when that code comes back through the bot's `/start`, which is the moment
+ * `chatId` is known. Not a synced table: nothing here is training data, and it
+ * belongs to the server's half of the feature.
+ *
+ * The bot runs on the server's clock, which is UTC, so the user's zone travels
+ * with their settings and every "today" and "Monday" is worked out in it.
+ * `lastDailyOn` and `lastWeeklyOn` are local dates, and are what stop a
+ * restart, or a minute that is checked twice, from sending anything twice.
+ */
+export const telegramLinks = pgTable(
+  'telegram_links',
+  {
+    userId: text('user_id')
+      .primaryKey()
+      .references(() => user.id, { onDelete: 'cascade' }),
+    /** Telegram chat ids exceed 32 bits, and are only ever compared. */
+    chatId: text('chat_id'),
+    username: text('username'),
+    linkCode: text('link_code'),
+    linkCodeExpiresAt: timestamp('link_code_expires_at'),
+    timeZone: text('time_zone').notNull().default('UTC'),
+    unit: text('unit').notNull().default('kg'),
+    /** "HH:MM", local. The daily line goes out at this time; on Mondays, the report too. */
+    dailyTime: text('daily_time').notNull().default('07:30'),
+    dailyEnabled: boolean('daily_enabled').notNull().default(true),
+    weeklyEnabled: boolean('weekly_enabled').notNull().default(true),
+    lastDailyOn: text('last_daily_on'),
+    lastWeeklyOn: text('last_weekly_on'),
+    createdAt: timestamp('created_at').notNull().defaultNow(),
+    updatedAt: timestamp('updated_at').notNull().defaultNow(),
+  },
+  (table) => [
+    uniqueIndex('telegram_links_chat_idx').on(table.chatId),
+    uniqueIndex('telegram_links_code_idx').on(table.linkCode),
+  ],
+);
+
+// ---------------------------------------------------------------------------
 // Relations
 // ---------------------------------------------------------------------------
 
