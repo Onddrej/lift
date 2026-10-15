@@ -8,6 +8,12 @@ run. To change an entry, reword the commit; to change the shape of the file,
 change the script. Releases before v0.8.0 predate the commit convention and
 appear under "Other changes".
 
+## [0.29.0](https://github.com/pawan67/lift/compare/v0.28.0...v0.29.0) - 2026-10-15
+
+### Features
+
+- add a branded PDF training report and a Telegram bot with daily nudges and a weekly report ([48b96df](https://github.com/pawan67/lift/commit/48b96dff3ddc1647a3dfd8da52bdf7c4b456b5e6))
+
 ## [0.28.0](https://github.com/pawan67/lift/compare/v0.27.0...v0.28.0) - 2026-10-15
 
 ### Features
