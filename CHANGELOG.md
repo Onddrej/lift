@@ -8,6 +8,12 @@ run. To change an entry, reword the commit; to change the shape of the file,
 change the script. Releases before v0.8.0 predate the commit convention and
 appear under "Other changes".
 
+## [0.29.1](https://github.com/pawan67/lift/compare/v0.29.0...v0.29.1) - 2026-10-15
+
+### Performance
+
+- re-record the APK size baseline from v0.28.0 ([5703360](https://github.com/pawan67/lift/commit/57033608eab72661d6722f5a33ceb61c831aadf5))
+
 ## [0.29.0](https://github.com/pawan67/lift/compare/v0.28.0...v0.29.0) - 2026-10-15
 
 ### Features
