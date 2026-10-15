@@ -8,6 +8,16 @@ run. To change an entry, reword the commit; to change the shape of the file,
 change the script. Releases before v0.8.0 predate the commit convention and
 appear under "Other changes".
 
+## [0.28.0](https://github.com/pawan67/lift/compare/v0.27.0...v0.28.0) - 2026-10-15
+
+### Features
+
+- rebuild the coach chat with streaming polish, and answer small talk without reading the log ([3034485](https://github.com/pawan67/lift/commit/30344856aee8490cb4d6513e6443b80b1fef1e2d))
+
+### Internal
+
+- docs: add a one-minute promo video and link it from the README ([48555b5](https://github.com/pawan67/lift/commit/48555b5f6e16c430b95aa4317f24ca42c33c5466))
+
 ## [0.27.0](https://github.com/pawan67/lift/compare/v0.26.0...v0.27.0) - 2026-10-10
 
 ### Features
