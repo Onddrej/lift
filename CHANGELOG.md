@@ -8,6 +8,13 @@ run. To change an entry, reword the commit; to change the shape of the file,
 change the script. Releases before v0.8.0 predate the commit convention and
 appear under "Other changes".
 
+## [0.29.2](https://github.com/pawan67/lift/compare/v0.29.1...v0.29.2) - 2026-10-19
+
+### Fixes
+
+- **mobile:** stop the web app freezing while it seeds and syncs ([960758e](https://github.com/pawan67/lift/commit/960758e4079e7dd87122354d9365b89cbf7d55f3))
+- open a number pad for time entry, not the full keyboard ([90f48e1](https://github.com/pawan67/lift/commit/90f48e17ae5c4a00a2e5542b76c10edf45b4ff59))
+
 ## [0.29.1](https://github.com/pawan67/lift/compare/v0.29.0...v0.29.1) - 2026-10-15
 
 ### Performance
