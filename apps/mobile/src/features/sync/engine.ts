@@ -15,10 +15,22 @@ import {
   type SyncPushResponse,
   type SyncableTable,
 } from '@lift/shared';
-import { and, asc, desc, eq, gte, inArray, isNotNull, lt, sql } from 'drizzle-orm';
+import {
+  and,
+  asc,
+  desc,
+  eq,
+  getTableColumns,
+  gte,
+  inArray,
+  isNotNull,
+  lt,
+  sql,
+} from 'drizzle-orm';
 
 import { db } from '@/db/client';
 import { SYNC_TABLE_MAP, syncMeta, syncOplog } from '@/db/schema';
+import { yieldToEventLoop } from '@/db/yield';
 
 import { apiFetch, SyncHttpError } from './auth-client';
 
@@ -29,6 +41,17 @@ const DEVICE_KEY = 'device_id';
  *  a failure doesn't discard much work. */
 const PUSH_BATCH = 500;
 const PULL_LIMIT = 1000;
+
+/**
+ * Pulled rows per upsert statement.
+ *
+ * One statement per row was one commit per row, and in a browser each of those
+ * blocks the main thread on the synchronous bridge: a full history of a few
+ * thousand rows can freeze the tab for minutes. Batching cuts the statement count
+ * fifty-fold. 50 rows matches the catalog seed and stays far below SQLite's
+ * bound-parameter limit at every table's width.
+ */
+const APPLY_CHUNK = 50;
 
 /**
  * Stop sending a mutation the server keeps rejecting, so it can't block the
@@ -473,26 +496,38 @@ async function pullChanges(): Promise<{ applied: number; deferred: number }> {
     const rows = collected.get(name);
     if (!table || !rows) continue;
 
-    for (const row of rows) {
-      const values = toLocalRow({
+    const local = rows.map((row) =>
+      toLocalRow({
         ...row,
         // Rows arriving from the server are by definition already synced.
         // Marking them 'pending' would push them straight back.
         syncState: 'synced',
-      });
+      }),
+    );
+
+    for (let i = 0; i < local.length; i += APPLY_CHUNK) {
+      const chunk = local.slice(i, i + APPLY_CHUNK);
 
       try {
-        await db
-          .insert(table)
-          .values(values as never)
-          .onConflictDoUpdate({ target: table.id, set: values as never });
-
-        applied += 1;
-      } catch (error) {
-        // Only the row is abandoned, and only for this run. See the note above
-        // for why the cursor then refuses to move.
-        deferrals.push(`${name}/${String(row.id ?? '?')}: ${messageOf(error)}`);
+        await upsertChunk(table, chunk);
+        applied += chunk.length;
+      } catch {
+        // A statement fails whole, so nothing from this chunk landed. Going
+        // again one row at a time finds the row that would not store and keeps
+        // the rest of the chunk.
+        for (const values of chunk) {
+          try {
+            await upsertChunk(table, [values]);
+            applied += 1;
+          } catch (error) {
+            // Only the row is abandoned, and only for this run. See the note
+            // above for why the cursor then refuses to move.
+            deferrals.push(`${name}/${String(values.id ?? '?')}: ${messageOf(error)}`);
+          }
+        }
       }
+
+      await yieldToEventLoop();
     }
   }
 
@@ -524,6 +559,42 @@ async function pullChanges(): Promise<{ applied: number; deferred: number }> {
   if (cursor !== null && deferrals.length === 0) await writeMeta(CURSOR_KEY, cursor);
 
   return { applied, deferred: deferrals.length };
+}
+
+type SyncTable = (typeof SYNC_TABLE_MAP)[keyof typeof SYNC_TABLE_MAP];
+
+/**
+ * Upserts rows of one table, in one statement when they share a shape.
+ *
+ * The conflict branch takes each column from `excluded`, the row that failed to
+ * insert, so every row is updated to its own values. Only the columns the rows
+ * actually carry are listed: the per-row upsert this replaced left an omitted
+ * column alone on update, and so does this.
+ *
+ * Rows that do not all carry the same columns go one per statement, in order,
+ * because a multi-row insert fills a missing column with its default and would
+ * then write that default over the stored value.
+ */
+async function upsertChunk(table: SyncTable, rows: Record<string, unknown>[]): Promise<void> {
+  const shape = Object.keys(rows[0]).sort().join();
+  const uniform = rows.every((row) => Object.keys(row).sort().join() === shape);
+
+  if (!uniform) {
+    for (const row of rows) await upsertChunk(table, [row]);
+    return;
+  }
+
+  const columns = getTableColumns(table) as Record<string, { name: string }>;
+  const set = Object.fromEntries(
+    Object.keys(rows[0])
+      .filter((key) => key !== 'id' && key in columns)
+      .map((key) => [key, sql.raw(`excluded."${columns[key].name}"`)]),
+  );
+
+  const insert = db.insert(table).values(rows as never);
+
+  if (Object.keys(set).length === 0) await insert.onConflictDoNothing({ target: table.id });
+  else await insert.onConflictDoUpdate({ target: table.id, set: set as never });
 }
 
 /** SQLite rejects with a plain `Error`, so the message is all there is. */

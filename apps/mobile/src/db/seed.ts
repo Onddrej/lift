@@ -13,6 +13,7 @@ import { eq, sql } from 'drizzle-orm';
 
 import { db } from './client';
 import { exercises, syncMeta } from './schema';
+import { yieldToEventLoop } from './yield';
 
 // Drizzle exposes no first-class `excluded.*` helper for SQLite upserts, so the
 // conflict-target columns drop to raw SQL.
@@ -103,6 +104,10 @@ export async function seedExerciseLibrary(): Promise<void> {
           videoUrl: sqlExcluded('video_url'),
         },
       });
+
+    // Without this the whole seed is one uninterrupted task, which measured
+    // 12.6s of frozen tab on a cold browser profile. See `yieldToEventLoop`.
+    await yieldToEventLoop();
   }
 
   // Written last: a crash mid-seed leaves the fingerprint absent, so the next
