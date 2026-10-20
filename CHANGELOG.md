@@ -8,6 +8,12 @@ run. To change an entry, reword the commit; to change the shape of the file,
 change the script. Releases before v0.8.0 predate the commit convention and
 appear under "Other changes".
 
+## [0.29.3](https://github.com/pawan67/lift/compare/v0.29.2...v0.29.3) - 2026-10-20
+
+### Fixes
+
+- **mobile:** stop hidden exercise lists mounting the whole catalog on web ([473c81c](https://github.com/pawan67/lift/commit/473c81c9654a89a36ddadf76508d8ac87b4f7442))
+
 ## [0.29.2](https://github.com/pawan67/lift/compare/v0.29.1...v0.29.2) - 2026-10-19
 
 ### Fixes
