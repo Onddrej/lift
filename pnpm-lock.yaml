@@ -5,6 +5,9 @@ settings:
   excludeLinksFromLockfile: false
 
 patchedDependencies:
+  '@shopify/flash-list@2.0.2':
+    hash: ea301686db2d44c429744a024001b5c558b01b508b85b2d578884dff0a90a254
+    path: patches/@shopify__flash-list@2.0.2.patch
   expo-sqlite@57.0.1:
     hash: fa7aa92e6819ef8354d103f6542b1f7796c0a76880f25d5992f67dd46342438b
     path: patches/expo-sqlite@57.0.1.patch
@@ -152,7 +155,7 @@ importers:
         version: link:../../packages/shared
       '@shopify/flash-list':
         specifier: 2.0.2
-        version: 2.0.2(@babel/runtime@7.29.7)(react-native@0.86.2(@babel/core@7.29.7)(@react-native/metro-config@0.86.2(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
+        version: 2.0.2(patch_hash=ea301686db2d44c429744a024001b5c558b01b508b85b2d578884dff0a90a254)(@babel/runtime@7.29.7)(react-native@0.86.2(@babel/core@7.29.7)(@react-native/metro-config@0.86.2(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)
       '@tanstack/react-query':
         specifier: ^5.101.4
         version: 5.101.4(react@19.2.3)
@@ -10411,7 +10414,7 @@ snapshots:
 
   '@sec-ant/readable-stream@0.4.1': {}
 
-  '@shopify/flash-list@2.0.2(@babel/runtime@7.29.7)(react-native@0.86.2(@babel/core@7.29.7)(@react-native/metro-config@0.86.2(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)':
+  '@shopify/flash-list@2.0.2(patch_hash=ea301686db2d44c429744a024001b5c558b01b508b85b2d578884dff0a90a254)(@babel/runtime@7.29.7)(react-native@0.86.2(@babel/core@7.29.7)(@react-native/metro-config@0.86.2(@babel/core@7.29.7))(@types/react@19.2.18)(react@19.2.3))(react@19.2.3)':
     dependencies:
       '@babel/runtime': 7.29.7
       react: 19.2.3

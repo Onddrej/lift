@@ -1,0 +1,45 @@
+diff --git a/dist/recyclerview/RecyclerView.js b/dist/recyclerview/RecyclerView.js
+index 8bea6266ba1053d9d86d1ad19bee7cef5a2265c4..41492d830bd8fe326b8c9d17ba65d6f85bc9b6b0 100644
+--- a/dist/recyclerview/RecyclerView.js
++++ b/dist/recyclerview/RecyclerView.js
+@@ -70,6 +70,17 @@ var RecyclerViewComponent = function (props, ref) {
+             var outerViewLayout = (0, measureLayout_1.measureParentSize)(internalViewRef.current);
+             var firstChildViewLayout = (0, measureLayout_1.measureFirstChildLayout)(firstChildViewRef.current, internalViewRef.current);
+             containerViewSizeRef.current = outerViewLayout;
++            // A container measuring 0x0 is not on screen: on web, a stack screen
++            // covered by another one is kept mounted under `display: none`, and so
++            // is everything inside it. Taken as a real window, a zero height
++            // engages every item in the list (see the item effect below), so a
++            // hidden list renders its entire data set. Keep the last real window
++            // instead. The size is still recorded above, so the container's
++            // `onLayout` sees it change back when the list is shown again and
++            // lays out afresh then.
++            if (isHiddenContainer(outerViewLayout)) {
++                return;
++            }
+             // Calculate offset of first item
+             var firstItemOffset = horizontal
+                 ? firstChildViewLayout.x - outerViewLayout.x
+@@ -98,6 +109,14 @@ var RecyclerViewComponent = function (props, ref) {
+         if (pendingChildIds.size > 0) {
+             return;
+         }
++        // Inside a hidden container every item measures 0 high, and storing
++        // those heights packs the whole data set into the draw distance, which
++        // renders all of it on the next pass. Thousands of rows were mounted
++        // into an invisible screen this way. Nothing here is visible, so there
++        // is nothing to lay out until it is.
++        if (isHiddenContainer(containerViewSizeRef.current)) {
++            return;
++        }
+         var layoutInfo = Array.from(refHolder, function (_a) {
+             var _b = tslib_1.__read(_a, 2), index = _b[0], viewHolderRef = _b[1];
+             var layout = (0, measureLayout_1.measureItemLayout)(viewHolderRef.current, recyclerViewManager.tryGetLayout(index));
+@@ -355,4 +374,7 @@ RecyclerViewComponent.displayName = "FlashList";
+ // Create and export the memoized, forwarded ref component
+ var RecyclerView = react_1.default.memo((0, react_1.forwardRef)(RecyclerViewComponent));
+ exports.RecyclerView = RecyclerView;
++function isHiddenContainer(layout) {
++    return layout !== undefined && layout.width === 0 && layout.height === 0;
++}
+ //# sourceMappingURL=RecyclerView.js.map

@@ -15,5 +15,13 @@ packages:
 #
 # Native is unaffected: this is the web bridge only, which is what the desktop
 # build and `scripts/screenshots` run on. See the patch.
+#
+# FlashList 2.0.2 (and 2.3.3, the latest at the time) takes a hidden list's 0x0
+# measurement as its real window. On web a stack screen covered by another is
+# kept mounted under `display: none`, so leaving the exercise library mounted
+# all 6,800 rows into the screen underneath: 82,000 DOM nodes, a three second
+# freeze, and every later render dragging them along. The patch skips layout
+# while the container measures 0x0. Harmless on native, where it never does.
 patchedDependencies:
+  '@shopify/flash-list@2.0.2': patches/@shopify__flash-list@2.0.2.patch
   expo-sqlite@57.0.1: patches/expo-sqlite@57.0.1.patch
