@@ -46,11 +46,7 @@ import { clearSessionNotice, prepareLiveNotice } from '@/features/notifications/
 import { ExerciseDemoSheet } from '@/features/exercises/exercise-demo-sheet';
 import { ExerciseBlock } from '@/features/workouts/exercise-block';
 import { CollapsedLift, SupersetGroup } from '@/features/workouts/collapsed-lift';
-import {
-  defaultExpandedUnit,
-  groupLiftUnits,
-  unitIsComplete,
-} from '@/features/workouts/lift-units';
+import { defaultExpandedUnit, groupLiftUnits } from '@/features/workouts/lift-units';
 import { ghostFill, pairedPreviousSet } from '@/features/workouts/previous';
 import {
   cancelRestNotification,
@@ -156,21 +152,14 @@ export default function ActiveWorkoutScreen() {
   const startRest = useTimer((state) => state.startRest);
   const { guard, lostWrites } = useWriteGuard();
   const [expandedId, setExpandedId] = useState<string | null>(null);
-
   /*
-   * The hand-off between one lift and the next.
-   *
-   * `advanceTo` holds the unit the screen owes the reader a scroll to, and it
-   * is a ref rather than state on purpose: nothing renders differently because
-   * of it, and putting it in state would re-render every block on the screen to
-   * record an intention that is spent one layout pass later.
-   *
-   * It is only ever set by the *automatic* advance, never by a tap on a
-   * collapsed lift. Someone who reaches down the list and opens a block has
-   * already put their eye where they want it, and scrolling under them there
-   * would be the app arguing with the gesture.
+   * Everything folded, on purpose: set when the last set of a lift is checked
+   * off. Finishing a lift used to open the next unfinished one and scroll to it,
+   * and when nothing was left unfinished it fell back to the first lift of the
+   * session, which read as the app throwing the user back to where they started.
+   * Now a finished lift simply folds away and the user opens the next one.
    */
-  const advanceTo = useRef<string | null>(null);
+  const [collapsedAll, setCollapsedAll] = useState(false);
   const scrollRef = useRef<ScrollView>(null);
   const [demo, setDemo] = useState<{
     name: string;
@@ -194,25 +183,6 @@ export default function ActiveWorkoutScreen() {
     return () => clearTimeout(done);
   }, [recordBurst]);
 
-  /*
-   * The advance expires if nothing claims it.
-   *
-   * `advanceTo` is spent by the next layout of the unit it names, and a layout
-   * is not a thing this screen can promise: an expand that changes neither the
-   * unit's height nor its position fires no event, and the intention would sit
-   * in the ref until some unrelated edit re-laid that block out and scrolled
-   * the user somewhere they had not asked to go, minutes later. Half a second
-   * is many frames longer than the layout it is waiting on and far short of
-   * anything a user would connect to the set they just logged.
-   */
-  useEffect(() => {
-    const owed = advanceTo.current;
-    if (owed === null) return;
-    const lapse = setTimeout(() => {
-      if (advanceTo.current === owed) advanceTo.current = null;
-    }, 500);
-    return () => clearTimeout(lapse);
-  }, [expandedId]);
 
   /*
    * Keeps the screen on mid-set so the phone doesn't lock between reps.
@@ -680,22 +650,8 @@ export default function ActiveWorkoutScreen() {
           return member.sets.every((other) => other.isCompleted);
         });
         if (finishesUnit) {
-          const index = units.findIndex((entry) => entry.id === unit.id);
-          const next = units.slice(index + 1).find((entry) => !unitIsComplete(entry));
-          if (next) {
-            setExpandedId(next.id);
-            /*
-             * And take the eye to it. See `advanceTo`.
-             *
-             * The expand on its own moves the page out from under the thumb:
-             * the block just finished collapses from a table of five rows to
-             * one line, and the next opens somewhere below the fold, so the
-             * hand that has just checked off the last set of the squat is
-             * looking at whatever happened to slide into that space. The
-             * scroll is what turns a re-layout into a hand-off.
-             */
-            advanceTo.current = next.id;
-          }
+          setExpandedId(null);
+          setCollapsedAll(true);
         }
       }
 
@@ -811,8 +767,27 @@ export default function ActiveWorkoutScreen() {
   const [restEditorId, setRestEditorId] = useState<string | null>(null);
   const restEditorDetail = details.find((detail) => detail.workoutExercise.id === restEditorId);
 
-  const openUnitId =
-    expandedId && units.some((unit) => unit.id === expandedId)
+  /*
+   * A lift added after everything was folded opens on its own: it is the one
+   * the user just reached for. Tracked against the ids seen last render rather
+   * than in an effect, so the new block is open on the frame it first appears.
+   */
+  const unitIds = units.map((unit) => unit.id).join(',');
+  const [seenUnitIds, setSeenUnitIds] = useState(unitIds);
+  if (seenUnitIds !== unitIds) {
+    const before = new Set(seenUnitIds.split(','));
+    const added = units.filter((unit) => !before.has(unit.id));
+    setSeenUnitIds(unitIds);
+    // An empty string is the first load, not an addition.
+    if (seenUnitIds !== '' && added.length > 0) {
+      setExpandedId(added[added.length - 1]!.id);
+      setCollapsedAll(false);
+    }
+  }
+
+  const openUnitId = collapsedAll
+    ? null
+    : expandedId && units.some((unit) => unit.id === expandedId)
       ? expandedId
       : (defaultExpandedUnit(units)?.id ?? null);
 
@@ -1159,7 +1134,7 @@ export default function ActiveWorkoutScreen() {
           />
         ) : (
           units.map((unit, index) => {
-            const open = units.length === 1 || unit.id === openUnitId;
+            const open = unit.id === openUnitId;
             const lead = unit.members[0]!.exercise;
             const tables = unit.members.map((detail) => (
               <ExerciseBlock
@@ -1240,26 +1215,6 @@ export default function ActiveWorkoutScreen() {
             return (
               <View
                 key={unit.id}
-                /*
-                 * Every unit reports where it sits, and the one being advanced
-                 * to acts on it.
-                 *
-                 * `layout.y` is measured against the content container, which
-                 * is the coordinate `scrollTo` wants, and the event arrives
-                 * *after* the re-layout that the expand caused: reading a
-                 * position at the moment `setExpandedId` runs would give the
-                 * one it held while the block above it was still open. One
-                 * `lg` of headroom above it so the block does not sit flush
-                 * against the session bar.
-                 */
-                onLayout={(event) => {
-                  if (advanceTo.current !== unit.id) return;
-                  advanceTo.current = null;
-                  scrollRef.current?.scrollTo({
-                    y: Math.max(0, event.nativeEvent.layout.y - spacing.lg),
-                    animated: !reduceMotion,
-                  });
-                }}
               >
                 {index > 0 && <Divider />}
                 {open ? (
@@ -1271,7 +1226,10 @@ export default function ActiveWorkoutScreen() {
                 ) : (
                   <CollapsedLift
                     unit={unit}
-                    onExpand={() => setExpandedId(unit.id)}
+                    onExpand={() => {
+                      setCollapsedAll(false);
+                      setExpandedId(unit.id);
+                    }}
                     onOpenDemo={() =>
                       setDemo({
                         name: lead.name,

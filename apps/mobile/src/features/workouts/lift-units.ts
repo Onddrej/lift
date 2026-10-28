@@ -63,7 +63,11 @@ export function unitIsComplete(unit: LiftUnit): boolean {
   return total > 0 && done === total;
 }
 
-/** The unit to have open when nothing has been pinned: first unfinished, else the first. */
+/**
+ * The unit to have open when nothing has been pinned: the first unfinished one.
+ * None once every lift is done: falling back to the first lift used to throw
+ * the user back to the start of the session after their last set.
+ */
 export function defaultExpandedUnit(units: readonly LiftUnit[]): LiftUnit | undefined {
-  return units.find((unit) => !unitIsComplete(unit)) ?? units[0];
+  return units.find((unit) => !unitIsComplete(unit));
 }
