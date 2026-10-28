@@ -16,6 +16,7 @@ import {
   useScrollEdge,
 } from '@/components/ui';
 import { getWorkoutCalendar, type WorkoutCalendar } from '@/features/analytics/calendar';
+import { WeekCard } from '@/features/analytics/week-card';
 import { METRIC, TREND_METRICS, type TrendMetric } from '@/features/analytics/metrics';
 import { bodyPartColor } from '@/features/analytics/tones';
 import { bucketLabel } from '@/features/analytics/windows';
@@ -381,6 +382,19 @@ export default function HomeScreen() {
          * starting to lift. It draws nothing with a session open or with no
          * routine to suggest, and the masthead then leads as it always did.
          */}
+        {/*
+         * This week, first: which days have been trained, at a glance and
+         * without a scroll. Opens the calendar.
+         */}
+        {calendar && (
+          <WeekCard
+            calendar={calendar}
+            today={calendarStamp}
+            onPress={() => router.push('/calendar')}
+            style={styles.upNext}
+          />
+        )}
+
         <UpNextCard style={styles.upNext} />
 
         {/*
