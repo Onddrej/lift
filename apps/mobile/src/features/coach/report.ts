@@ -137,6 +137,36 @@ export async function buildCoachReport(options: CoachReportOptions): Promise<Coa
 }
 
 // ---------------------------------------------------------------------------
+// The coach's lookups
+// ---------------------------------------------------------------------------
+
+/**
+ * Finished sessions, assembled exactly as the review document prints them.
+ *
+ * `only` narrows to particular workouts, for a lookup that already knows which
+ * sessions it wants and should not read a year of sets to find three.
+ */
+export async function loadCoachSessions(
+  from: Date | null,
+  to: Date,
+  only?: readonly string[],
+): Promise<CoachSession[]> {
+  const [sessionRows, setRows] = await Promise.all([loadSessions(from, to, only), loadSets(from, to, only)]);
+  const exerciseById = await loadExerciseFacts(setRows.map((row) => row.exerciseId));
+  return assembleSessions(sessionRows, setRows, exerciseById);
+}
+
+/** Every routine, as the document prints them. */
+export function loadCoachRoutines(): Promise<CoachRoutine[]> {
+  return loadRoutines();
+}
+
+/** Current bests for these exercises, or for every exercise with one when null. */
+export function loadCoachRecords(exerciseIds: string[] | null): Promise<CoachRecord[]> {
+  return loadRecords(exerciseIds);
+}
+
+// ---------------------------------------------------------------------------
 // Sessions and their sets
 // ---------------------------------------------------------------------------
 
@@ -152,9 +182,14 @@ interface SessionRow {
   prCount: number;
 }
 
-async function loadSessions(from: Date | null, to: Date): Promise<SessionRow[]> {
+async function loadSessions(
+  from: Date | null,
+  to: Date,
+  only?: readonly string[],
+): Promise<SessionRow[]> {
   const filters = [isNotNull(workouts.finishedAt), isNull(workouts.deletedAt), lt(workouts.startedAt, to)];
   if (from) filters.push(gte(workouts.startedAt, from));
+  if (only) filters.push(inArray(workouts.id, [...only]));
 
   return db
     .select({
@@ -196,7 +231,7 @@ interface SetRow {
  * is not in the log the app shows either: putting it in front of a reviewer
  * invites a critique of a failed set that never happened.
  */
-async function loadSets(from: Date | null, to: Date): Promise<SetRow[]> {
+async function loadSets(from: Date | null, to: Date, only?: readonly string[]): Promise<SetRow[]> {
   const filters = [
     eq(workoutSets.isCompleted, true),
     isNull(workoutSets.deletedAt),
@@ -206,6 +241,7 @@ async function loadSets(from: Date | null, to: Date): Promise<SetRow[]> {
     lt(workouts.startedAt, to),
   ];
   if (from) filters.push(gte(workouts.startedAt, from));
+  if (only) filters.push(inArray(workouts.id, [...only]));
 
   return db
     .select({
@@ -531,8 +567,11 @@ async function loadRoutines(): Promise<CoachRoutine[]> {
  * records screen applies: the table keeps historical rows, so the newest entry
  * is not necessarily the largest.
  */
-async function loadRecords(exerciseIds: string[]): Promise<CoachRecord[]> {
-  if (exerciseIds.length === 0) return [];
+async function loadRecords(exerciseIds: string[] | null): Promise<CoachRecord[]> {
+  if (exerciseIds?.length === 0) return [];
+
+  const filters = [isNull(personalRecords.deletedAt)];
+  if (exerciseIds) filters.push(inArray(personalRecords.exerciseId, exerciseIds));
 
   const rows = await db
     .select({
@@ -545,7 +584,7 @@ async function loadRecords(exerciseIds: string[]): Promise<CoachRecord[]> {
     })
     .from(personalRecords)
     .innerJoin(exercises, eq(personalRecords.exerciseId, exercises.id))
-    .where(and(inArray(personalRecords.exerciseId, exerciseIds), isNull(personalRecords.deletedAt)))
+    .where(and(...filters))
     .orderBy(desc(personalRecords.value));
 
   const best = new Map<string, CoachRecord>();

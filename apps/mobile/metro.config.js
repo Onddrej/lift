@@ -59,4 +59,29 @@ config.server.enhanceMiddleware = (middleware) => (req, res, next) => {
   return middleware(req, res, next);
 };
 
+/*
+ * tslib on the web, for pdf-lib (the training report's PDF).
+ *
+ * The browser build resolves tslib's `import` condition, which is a small
+ * wrapper that default-imports the UMD `tslib.js` and destructures it. Metro's
+ * interop hands that wrapper `undefined`, so the first module that touches a
+ * helper throws at load and the whole web app goes blank. tslib ships a real
+ * ES build beside the wrapper, and that is what web gets instead. Native
+ * resolves `require`, gets the CommonJS file, and never reaches this.
+ */
+const resolveDefault = config.resolver.resolveRequest;
+config.resolver.resolveRequest = (context, moduleName, platform) => {
+  const resolve = resolveDefault ?? context.resolveRequest;
+  const resolved = resolve(context, moduleName, platform);
+  if (
+    platform === 'web' &&
+    moduleName === 'tslib' &&
+    resolved.type === 'sourceFile' &&
+    /[\\/]tslib[\\/]modules[\\/]index\.js$/.test(resolved.filePath)
+  ) {
+    return { type: 'sourceFile', filePath: resolved.filePath.replace(/modules[\\/]index\.js$/, 'tslib.es6.js') };
+  }
+  return resolved;
+};
+
 module.exports = config;

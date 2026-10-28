@@ -52,7 +52,12 @@ RUN pnpm --filter @lift/api build
 # `--legacy` because pnpm 10 otherwise insists on `inject-workspace-packages`,
 # which would change how @lift/shared is linked for every other workspace
 # project too. The node-linker is repeated here because deploy reads it again.
-RUN pnpm --filter @lift/api --prod --config.node-linker=isolated deploy --legacy /deploy
+#
+# `allow-unused-patches` because `patchedDependencies` is workspace-wide and
+# deploy fails on any patch whose package is not in the API's graph. The
+# FlashList patch is for the app alone, and this image never sees the app's
+# manifest.
+RUN pnpm --filter @lift/api --prod --config.node-linker=isolated --config.allow-unused-patches=true deploy --legacy /deploy
 
 # Fail the build, rather than the sign-up endpoint, if that ever happens again.
 # The installed tree above is lockfile-exact; every direct dependency in the
@@ -77,6 +82,8 @@ USER node
 COPY --from=build --chown=node:node /deploy/node_modules ./node_modules
 COPY --from=build --chown=node:node /deploy/dist ./dist
 COPY --from=build --chown=node:node /app/apps/api/drizzle ./drizzle
+# The report PDF's typeface, read at runtime from beside `dist` like the migrations.
+COPY --from=build --chown=node:node /app/apps/api/assets ./assets
 
 EXPOSE 3000
 

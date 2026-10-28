@@ -12,8 +12,14 @@
  * renders its question after its answer is worse than one that renders slowly.
  */
 
-import { COACH_PROMPT_VERSION, uuidv7, type AiMessage, type CoachThreadKind } from '@lift/shared';
-import { and, asc, desc, eq } from 'drizzle-orm';
+import {
+  COACH_PROMPT_VERSION,
+  uuidv7,
+  type AiMessage,
+  type CoachMessageParts,
+  type CoachThreadKind,
+} from '@lift/shared';
+import { and, asc, desc, eq, inArray } from 'drizzle-orm';
 
 import { db } from '@/db/client';
 import { coachMessages, coachThreads } from '@/db/schema';
@@ -76,6 +82,7 @@ export async function appendMessage(
     threadId,
     role: message.role,
     content: message.content,
+    parts: partsOf(message),
     position: (last?.position ?? 0) + 1,
     createdAt: Date.now(),
   });
@@ -89,12 +96,42 @@ export async function appendMessage(
 
 export async function readMessages(threadId: string): Promise<AiMessage[]> {
   const rows = await db
-    .select({ role: coachMessages.role, content: coachMessages.content })
+    .select({ role: coachMessages.role, content: coachMessages.content, parts: coachMessages.parts })
     .from(coachMessages)
     .where(eq(coachMessages.threadId, threadId))
     .orderBy(asc(coachMessages.position));
 
-  return rows.map((row) => ({ role: row.role, content: row.content }));
+  return rows.map((row) => ({ role: row.role, content: row.content, ...row.parts }));
+}
+
+/**
+ * Drops every turn from `index` on, counted the way `readMessages` returns them.
+ *
+ * For "try again": the answer being replaced has to leave the database too, or
+ * reopening the thread would show both and send both.
+ */
+export async function deleteMessagesFrom(threadId: string, index: number): Promise<void> {
+  const rows = await db
+    .select({ id: coachMessages.id })
+    .from(coachMessages)
+    .where(eq(coachMessages.threadId, threadId))
+    .orderBy(asc(coachMessages.position));
+
+  const doomed = rows.slice(index).map((row) => row.id);
+  if (doomed.length > 0) await db.delete(coachMessages).where(inArray(coachMessages.id, doomed));
+}
+
+export async function renameThread(threadId: string, title: string): Promise<void> {
+  await db.update(coachThreads).set({ title }).where(eq(coachThreads.id, threadId));
+}
+
+/** The tool traffic worth a column, or null so an ordinary turn stores nothing extra. */
+function partsOf(message: AiMessage): CoachMessageParts | null {
+  const parts: CoachMessageParts = {};
+  if (message.toolCalls?.length) parts.toolCalls = message.toolCalls;
+  if (message.toolResults?.length) parts.toolResults = message.toolResults;
+  if (message.reasoning) parts.reasoning = message.reasoning;
+  return Object.keys(parts).length > 0 ? parts : null;
 }
 
 export async function listThreads(kind: CoachThreadKind): Promise<CoachThread[]> {

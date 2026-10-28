@@ -8,6 +8,81 @@ run. To change an entry, reword the commit; to change the shape of the file,
 change the script. Releases before v0.8.0 predate the commit convention and
 appear under "Other changes".
 
+## [0.29.3](https://github.com/pawan67/lift/compare/v0.29.2...v0.29.3) - 2026-10-20
+
+### Fixes
+
+- **mobile:** stop hidden exercise lists mounting the whole catalog on web ([473c81c](https://github.com/pawan67/lift/commit/473c81c9654a89a36ddadf76508d8ac87b4f7442))
+
+## [0.29.2](https://github.com/pawan67/lift/compare/v0.29.1...v0.29.2) - 2026-10-19
+
+### Fixes
+
+- **mobile:** stop the web app freezing while it seeds and syncs ([960758e](https://github.com/pawan67/lift/commit/960758e4079e7dd87122354d9365b89cbf7d55f3))
+- open a number pad for time entry, not the full keyboard ([90f48e1](https://github.com/pawan67/lift/commit/90f48e17ae5c4a00a2e5542b76c10edf45b4ff59))
+
+## [0.29.1](https://github.com/pawan67/lift/compare/v0.29.0...v0.29.1) - 2026-10-15
+
+### Performance
+
+- re-record the APK size baseline from v0.28.0 ([5703360](https://github.com/pawan67/lift/commit/57033608eab72661d6722f5a33ceb61c831aadf5))
+
+## [0.29.0](https://github.com/pawan67/lift/compare/v0.28.0...v0.29.0) - 2026-10-15
+
+### Features
+
+- add a branded PDF training report and a Telegram bot with daily nudges and a weekly report ([48b96df](https://github.com/pawan67/lift/commit/48b96dff3ddc1647a3dfd8da52bdf7c4b456b5e6))
+
+## [0.28.0](https://github.com/pawan67/lift/compare/v0.27.0...v0.28.0) - 2026-10-15
+
+### Features
+
+- rebuild the coach chat with streaming polish, and answer small talk without reading the log ([3034485](https://github.com/pawan67/lift/commit/30344856aee8490cb4d6513e6443b80b1fef1e2d))
+
+### Internal
+
+- docs: add a one-minute promo video and link it from the README ([48555b5](https://github.com/pawan67/lift/commit/48555b5f6e16c430b95aa4317f24ca42c33c5466))
+
+## [0.27.0](https://github.com/pawan67/lift/compare/v0.26.0...v0.27.0) - 2026-10-10
+
+### Features
+
+- make Home's Up next card compact, dismissible for the day, and introduced by the coach ([ffe28ed](https://github.com/pawan67/lift/commit/ffe28ed048f3eae9f9a11c971cda9f8b697a8485))
+
+## [0.26.0](https://github.com/pawan67/lift/compare/v0.25.0...v0.26.0) - 2026-10-10
+
+### Features
+
+- put the coach on Home with a composer that stays above the keyboard ([938c335](https://github.com/pawan67/lift/commit/938c3357784f55c3ea96e5bec2fde70c9b722abe))
+
+## [0.25.0](https://github.com/pawan67/lift/compare/v0.24.0...v0.25.0) - 2026-10-10
+
+### Features
+
+- let the coach look up your log, draw your lifts and write plans you can save ([79c1b17](https://github.com/pawan67/lift/commit/79c1b17a8f25d025039ef4ca360da534e5c34308))
+- open the workout summary with a verdict and a next-time target per lift ([ea217b9](https://github.com/pawan67/lift/commit/ea217b9d20b496d7006c18d95537734fd52a2754))
+
+## [0.24.0](https://github.com/pawan67/lift/compare/v0.23.0...v0.24.0) - 2026-10-10
+
+### Fixes
+
+- dismiss delivered weigh-in notification on Android after reply ([381bfb8](https://github.com/pawan67/lift/commit/381bfb8762c6055ea955e7135abb184dc14bd3bc))
+
+### Other changes
+
+- Delete package-lock.json ([7d545e1](https://github.com/pawan67/lift/commit/7d545e15f26985dd2207c8a9582958339f10ae4c))
+- added support for deepseek api key ([603881c](https://github.com/pawan67/lift/commit/603881cda830c47a21b53cce9351679bd732cdad))
+
+## [0.23.0](https://github.com/pawan67/lift/compare/v0.22.0...v0.23.0) - 2026-10-01
+
+### Features
+
+- number picked exercises in the order they will be added ([f49f961](https://github.com/pawan67/lift/commit/f49f9611339660eec7694d3dd563a891b8995027))
+- show what each record beat and how each lift moved ([1cfd819](https://github.com/pawan67/lift/commit/1cfd8191920ecfefa6ba40cbd95da0c7ea770382))
+- make gold mean new on the records screen ([425cc9e](https://github.com/pawan67/lift/commit/425cc9e1bbe84b651fd659d1d66bbfc236ee9379))
+- put the next routine and its Start at the top of Home ([7840a07](https://github.com/pawan67/lift/commit/7840a073f607ae9dc00b19cc37b89ba493cc0f4c))
+- outline the next set and name it under the rest clock ([62b5f3a](https://github.com/pawan67/lift/commit/62b5f3ae65a127241cff754051daf54b2d4c1b9d))
+
 ## [0.22.0](https://github.com/pawan67/lift/compare/v0.21.1...v0.22.0) - 2026-09-29
 
 ### Features

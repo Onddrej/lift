@@ -28,7 +28,7 @@ export {
   type ListPickerProps,
   type OptionListProps,
 } from './list-picker';
-export { PressableScale, Reveal, type PressableScaleProps, type RevealProps } from './motion';
+export { popIn, PressableScale, Reveal, type PressableScaleProps, type RevealProps } from './motion';
 export { Screen, useScrollEdge, type ScreenProps } from './screen';
 export { Sheet, SheetAction, type SheetActionProps, type SheetProps } from './sheet';
 export { SheetScrollView, useSheetIsDialog, useSheetLayout, type SheetLayout } from './sheet-layout';

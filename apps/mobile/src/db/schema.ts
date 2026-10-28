@@ -21,6 +21,7 @@ import { index, integer, real, sqliteTable, text } from 'drizzle-orm/sqlite-core
 
 import type {
   AiRole,
+  CoachMessageParts,
   CoachThreadKind,
   DistanceUnit,
   Equipment,
@@ -429,6 +430,15 @@ export const coachMessages = sqliteTable(
       .references(() => coachThreads.id, { onDelete: 'cascade' }),
     role: text('role').notNull().$type<AiRole>(),
     content: text('content').notNull(),
+    /**
+     * The tool traffic of a turn: the lookups an assistant turn asked for, or
+     * the answers a user turn carried back. Null for an ordinary turn, which is
+     * every turn written before the coach could look anything up.
+     *
+     * Stored because a reopened conversation is sent again in full, and both
+     * providers refuse one where a call has no answer.
+     */
+    parts: text('parts', { mode: 'json' }).$type<CoachMessageParts>(),
     position: real('position').notNull(),
     createdAt: integer('created_at').notNull().$defaultFn(now),
   },

@@ -253,9 +253,9 @@ export default function ProfileScreen() {
           <ListRow
             icon="chatbubble-ellipses-outline"
             tone="category3"
-            title="Coach review"
-            subtitle="Have an AI criticise your training"
-            onPress={() => router.push('/coach')}
+            title="Coach"
+            subtitle="Ask an AI coach about your training"
+            onPress={() => router.push('/coach/chat')}
           />
           <Divider inset={spacing.lg} />
           {/*

@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { buildRequest, createSseDecoder, decodeSseLine } from './providers.ts';
+import {
+  buildRequest,
+  createSseDecoder,
+  createToolCallCollector,
+  decodeSseFrame,
+  decodeSseLine,
+} from './providers.ts';
 import type { AiConfig, AiRequest } from './messages.ts';
 
 const CLAUDE: AiConfig = { provider: 'anthropic', model: 'claude-sonnet-4-5', apiKey: 'sk-ant-test' };
@@ -139,6 +145,28 @@ describe('buildRequest, OpenAI-compatible', () => {
   it('ignores the cache hint rather than sending something unrecognised', () => {
     const body = bodyOf(OPENAI, { ...REQUEST, cacheFirstMessage: true });
     assert.equal(body.messages[1].content, 'the training document');
+  });
+});
+
+describe('buildRequest, DeepSeek', () => {
+  const DEEPSEEK: AiConfig = { provider: 'deepseek', model: 'deepseek-flash', apiKey: 'sk-test' };
+
+  it('defaults to DeepSeek\'s own host, never OpenAI\'s', () => {
+    // A named provider with no base URL set must not fall through to
+    // api.openai.com: that would send a DeepSeek key to a service that never
+    // issued it, and report the rejection as a wrong key.
+    const wire = buildRequest(DEEPSEEK, REQUEST);
+    assert.equal(wire.url, 'https://api.deepseek.com/v1/chat/completions');
+    assert.equal(wire.headers.authorization, 'Bearer sk-test');
+  });
+
+  it('reads answers in the OpenAI dialect', () => {
+    // DeepSeek's stream is the chat-completions shape, `data: [DONE]` and all,
+    // so the same decoder serves both. This locks that in: a regression that
+    // keyed decoding on the provider name would silently drop every delta.
+    const line = 'data: {"choices":[{"delta":{"content":"Side delts"},"index":0}]}';
+    assert.deepEqual(decodeSseLine(DEEPSEEK, line), { kind: 'delta', text: 'Side delts' });
+    assert.deepEqual(decodeSseLine(DEEPSEEK, 'data: [DONE]'), { kind: 'done' });
   });
 });
 
@@ -331,6 +359,140 @@ describe('createSseDecoder', () => {
     assert.deepEqual(decoder.push('data: {"type":"content_block_delta","del'), []);
     assert.deepEqual(decoder.push('ta":{"type":"text_delta","text":"hi"}}\n'), [
       { kind: 'delta', text: 'hi' },
+    ]);
+  });
+});
+
+describe('tool calls', () => {
+  const SCHEMA = { type: 'object', properties: { exercise: { type: 'string' } }, required: ['exercise'] };
+  const TOOLS: AiRequest['tools'] = [
+    { name: 'exercise_history', description: 'Sessions of one exercise.', parameters: SCHEMA },
+  ];
+
+  const ROUND_TRIP: AiRequest = {
+    system: 'Be blunt.',
+    tools: TOOLS,
+    maxOutputTokens: 1024,
+    messages: [
+      { role: 'user', content: 'why is bench stuck?' },
+      {
+        role: 'assistant',
+        content: 'Checking.',
+        toolCalls: [{ id: 'call_1', name: 'exercise_history', input: { exercise: 'Bench Press' } }],
+      },
+      {
+        role: 'user',
+        content: '',
+        toolResults: [{ callId: 'call_1', name: 'exercise_history', content: '3 sessions at 80 kg' }],
+      },
+    ],
+  };
+
+  it('offers tools to Anthropic under input_schema', () => {
+    const body = bodyOf(CLAUDE, ROUND_TRIP);
+    assert.equal(body.tools[0].name, 'exercise_history');
+    assert.deepEqual(body.tools[0].input_schema, SCHEMA);
+  });
+
+  it('offers tools to OpenAI as functions', () => {
+    const body = bodyOf(OPENAI, ROUND_TRIP);
+    assert.equal(body.tools[0].type, 'function');
+    assert.deepEqual(body.tools[0].function.parameters, SCHEMA);
+  });
+
+  it('sends no tools key at all when none were offered', () => {
+    assert.equal('tools' in bodyOf(CLAUDE, REQUEST), false);
+    assert.equal('tools' in bodyOf(OPENAI, REQUEST), false);
+  });
+
+  it('sends an Anthropic call as tool_use and its answer as a leading tool_result', () => {
+    const [, call, result] = bodyOf(CLAUDE, ROUND_TRIP).messages;
+    assert.deepEqual(call.content, [
+      { type: 'text', text: 'Checking.' },
+      { type: 'tool_use', id: 'call_1', name: 'exercise_history', input: { exercise: 'Bench Press' } },
+    ]);
+    // No empty text block: Anthropic refuses one.
+    assert.deepEqual(result.content, [
+      { type: 'tool_result', tool_use_id: 'call_1', content: '3 sessions at 80 kg' },
+    ]);
+  });
+
+  it('sends an OpenAI answer as a tool message and no empty user message', () => {
+    const messages = bodyOf(OPENAI, ROUND_TRIP).messages;
+    assert.equal(messages.length, 4);
+    assert.deepEqual(messages[2].tool_calls, [
+      {
+        id: 'call_1',
+        type: 'function',
+        function: { name: 'exercise_history', arguments: '{"exercise":"Bench Press"}' },
+      },
+    ]);
+    assert.deepEqual(messages[3], { role: 'tool', tool_call_id: 'call_1', content: '3 sessions at 80 kg' });
+  });
+
+  it('hands DeepSeek reasoning back only alongside the calls it led to', () => {
+    const request: AiRequest = {
+      ...ROUND_TRIP,
+      messages: ROUND_TRIP.messages.map((message, index) =>
+        index === 1 ? { ...message, reasoning: 'need the log' } : message,
+      ),
+    };
+    const messages = bodyOf({ ...OPENAI, provider: 'deepseek' }, request).messages;
+    assert.equal(messages[2].reasoning_content, 'need the log');
+    assert.equal('reasoning_content' in bodyOf(OPENAI, ROUND_TRIP).messages[2], false);
+  });
+
+  it('assembles an Anthropic call from its fragments', () => {
+    const stream = [
+      'data: {"type":"content_block_start","index":1,"content_block":{"type":"tool_use","id":"toolu_1","name":"exercise_history","input":{}}}',
+      'data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"{\\"exer"}}',
+      'data: {"type":"content_block_delta","index":1,"delta":{"type":"input_json_delta","partial_json":"cise\\": \\"Squat\\"}"}}',
+      'data: {"type":"message_stop"}',
+      '',
+    ].join('\n');
+
+    const decoder = createSseDecoder(CLAUDE);
+    const collector = createToolCallCollector();
+    for (const event of decoder.push(stream)) collector.push(event);
+
+    assert.deepEqual(collector.finish(), [
+      { id: 'toolu_1', name: 'exercise_history', input: { exercise: 'Squat' } },
+    ]);
+  });
+
+  it('assembles parallel OpenAI calls by index, whatever order they arrive in', () => {
+    const frames = [
+      '{"choices":[{"delta":{"tool_calls":[{"index":0,"id":"a","function":{"name":"exercise_history","arguments":""}}]}}]}',
+      '{"choices":[{"delta":{"tool_calls":[{"index":1,"id":"b","function":{"name":"records","arguments":"{}"}}]}}]}',
+      '{"choices":[{"delta":{"tool_calls":[{"index":0,"function":{"arguments":"{\\"exercise\\":\\"Row\\"}"}}]}}]}',
+      '{"choices":[{"delta":{},"finish_reason":"tool_calls"}]}',
+    ];
+
+    const collector = createToolCallCollector();
+    const events = frames.flatMap((frame) => decodeSseFrame(OPENAI, `data: ${frame}`));
+    events.forEach((event) => collector.push(event));
+
+    assert.equal(events.at(-1)?.kind, 'done');
+    assert.deepEqual(collector.finish(), [
+      { id: 'a', name: 'exercise_history', input: { exercise: 'Row' } },
+      { id: 'b', name: 'records', input: {} },
+    ]);
+  });
+
+  it('keeps a call whose arguments never became JSON, so it can still be answered', () => {
+    const collector = createToolCallCollector();
+    collector.push({ kind: 'tool-start', index: 0, id: 'x', name: 'records' });
+    collector.push({ kind: 'tool-delta', index: 0, json: '{"broken' });
+    assert.deepEqual(collector.finish(), [{ id: 'x', name: 'records', input: {} }]);
+  });
+
+  it('reports every event a single OpenAI frame carries', () => {
+    const frame =
+      'data: {"choices":[{"delta":{"reasoning_content":"hm","content":"Ok"},"finish_reason":"stop"}]}';
+    assert.deepEqual(decodeSseFrame(OPENAI, frame), [
+      { kind: 'reasoning', text: 'hm' },
+      { kind: 'delta', text: 'Ok' },
+      { kind: 'done' },
     ]);
   });
 });

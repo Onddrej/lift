@@ -209,6 +209,24 @@ export default function SettingsScreen() {
       </Reveal>
 
       {/*
+       * Telegram on its own card: it is not a preference about this phone but
+       * a connection to somewhere else, and it needs an account, which no row
+       * in the card above does.
+       */}
+      <Reveal index={1}>
+        <SectionHeader title="Connections" />
+        <Card padded={false} style={settingsStyles.section}>
+          <ListRow
+            icon="paper-plane-outline"
+            tone="accent"
+            title="Telegram"
+            subtitle="Daily nudge and a weekly PDF report"
+            onPress={() => router.push('/settings/telegram')}
+          />
+        </Card>
+      </Reveal>
+
+      {/*
        * Updates stays on the hub rather than taking a page of its own.
        *
        * The status row reports a state rather than holding a value, and the two

@@ -4,11 +4,12 @@
     "Keyed by ABI set, because an all-four-ABI build is roughly three times an",
     "arm64-only one and comparing the two is noise rather than a regression.",
     "",
-    "The numbers below were measured from the v0.14.1 release asset, which is",
-    "the first build carrying both minification flags. They are the point the",
-    "APK workflow's own comments describe: 3 dex files rather than the 6 an",
-    "unminified build produces, and lib/ deflated rather than STORED. Anything",
-    "that undoes either shows up here as tens of percent, not as noise.",
+    "The numbers below were measured from the v0.28.0 release asset. The first",
+    "baseline came from v0.14.1, the first build carrying both minification",
+    "flags: 3 dex files rather than the 6 an unminified build produces, and lib/",
+    "deflated rather than STORED. Anything that undoes either shows up here as",
+    "tens of percent, not as noise. v0.29.0 added pdf-lib and fontkit for the",
+    "training report, about 1.4 MB of bundle, measured at 32.75 MB in CI.",
     "",
     "tolerancePercent is headroom for a feature release, not a target. Raise it",
     "only with the reason in the commit message. To move a baseline, run",
@@ -19,18 +20,18 @@
   "tolerancePercent": 5,
   "builds": {
     "arm64-v8a": {
-      "recordedFrom": "lift-0.14.1-29-1b1d0f0.apk",
-      "recordedAt": "2026-08-26",
-      "totalBytes": 32416171,
+      "recordedFrom": "lift-0.28.0-50-80e23e4.apk",
+      "recordedAt": "2026-10-15",
+      "totalBytes": 32913490,
       "dexFiles": 3,
       "buckets": {
-        "dex": 8191221,
+        "dex": 8191216,
         "lib": 8474333,
-        "bundle": 8004092,
-        "assets": 17043,
-        "res": 3778684,
-        "arsc": 2311932,
-        "other": 1411175
+        "bundle": 8490468,
+        "assets": 17190,
+        "res": 3788708,
+        "arsc": 2312352,
+        "other": 1411240
       }
     }
   }

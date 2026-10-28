@@ -10,8 +10,9 @@
  */
 
 import { useState, type ReactNode } from 'react';
-import { Pressable, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
+import { Platform, Pressable, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
+  FadeIn,
   FadeInDown,
   interpolateColor,
   ReduceMotion,
@@ -19,6 +20,7 @@ import Animated, {
   useSharedValue,
   withSpring,
   withTiming,
+  type EntryAnimationsValues,
 } from 'react-native-reanimated';
 
 import {
@@ -275,13 +277,44 @@ export function Reveal({ children, index = 0, delay = 0, style }: RevealProps) {
   return (
     <Animated.View
       style={style}
-      entering={FadeInDown.duration(duration.base)
-        .easing(easing.out)
-        .delay(stagger + delay)
-        .withInitialValues({ transform: [{ translateY: RISE }] })
-        .reduceMotion(ReduceMotion.System)}
+      entering={
+        // A fade alone on the web. Reanimated's web layer gives an entrance
+        // with custom initial values a keyframe of its own, and that keyframe's
+        // clean-up timer pins the element `position: absolute` about a second
+        // later: it drops out of the flow and whatever follows it slides
+        // underneath. The built-in presets are exempt.
+        Platform.OS === 'web'
+          ? FadeIn.duration(duration.base).easing(easing.out).delay(stagger + delay)
+          : FadeInDown.duration(duration.base)
+              .easing(easing.out)
+              .delay(stagger + delay)
+              .withInitialValues({ transform: [{ translateY: RISE }] })
+              .reduceMotion(ReduceMotion.System)
+      }
     >
       {children}
     </Animated.View>
   );
+}
+
+// ---------------------------------------------------------------------------
+// popIn
+// ---------------------------------------------------------------------------
+
+/**
+ * An `entering` for a small control that appears or swaps in place: a send
+ * button turning into stop, a jump-to-latest button surfacing.
+ *
+ * From slightly small and clear, never from nothing: a control growing out of
+ * a point reads as being inflated rather than as arriving.
+ */
+export function popIn(_values: EntryAnimationsValues) {
+  'worklet';
+  return {
+    initialValues: { opacity: 0, transform: [{ scale: 0.6 }] },
+    animations: {
+      opacity: withTiming(1, timing.state),
+      transform: [{ scale: withTiming(1, timing.state) }],
+    },
+  };
 }

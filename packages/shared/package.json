@@ -1,6 +1,6 @@
 {
   "name": "@lift/shared",
-  "version": "0.22.0",
+  "version": "0.29.3",
   "private": true,
   "type": "module",
   "main": "./dist/index.js",
@@ -17,6 +17,11 @@
       "types": "./dist/exercises/index.d.ts",
       "default": "./dist/exercises/index.js"
     },
+    "./report": {
+      "react-native": "./src/report/index.ts",
+      "types": "./dist/report/index.d.ts",
+      "default": "./dist/report/index.js"
+    },
     "./import": {
       "react-native": "./src/import/index.ts",
       "types": "./dist/import/index.d.ts",
@@ -29,10 +34,12 @@
     "test": "node --test --experimental-strip-types 'src/**/*.test.ts'"
   },
   "dependencies": {
+    "@pdf-lib/fontkit": "^1.1.1",
+    "pdf-lib": "^1.17.1",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "typescript": "~6.0.3",
-    "@types/node": "^22.15.0"
+    "@types/node": "^22.15.0",
+    "typescript": "~6.0.3"
   }
 }

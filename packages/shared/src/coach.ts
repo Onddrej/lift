@@ -535,6 +535,32 @@ export function buildRoutineSection(report: CoachReport): string {
   return routineSection(report);
 }
 
+/**
+ * One session, one exercise or one record, in the document's own words.
+ *
+ * For the coach's lookups, which answer mid-conversation with the same
+ * formatting the opening export used. A set described two different ways in one
+ * thread is two things for a model to reconcile, and the cheaper of its two
+ * guesses is usually wrong.
+ */
+export function describeCoachSession(session: CoachSession, units: CoachUnits): string {
+  return sessionLines(session, units).join('\n');
+}
+
+export function describeCoachExercise(exercise: CoachExercise, units: CoachUnits): string {
+  return exerciseLines(exercise, units).join('\n');
+}
+
+export function describeCoachRecord(record: CoachRecord, units: CoachUnits): string {
+  return `${record.exercise}: ${PR_KIND_LABELS[record.kind]} ${describeRecord(record, units)}, set ${isoDay(
+    new Date(record.achievedAt),
+  )}`;
+}
+
+export function describeCoachRoutine(routine: CoachRoutine, units: CoachUnits): string {
+  return routineLines(routine, units).join('\n');
+}
+
 function routineSection(report: CoachReport): string {
   if (!report.routinesIncluded) {
     return [

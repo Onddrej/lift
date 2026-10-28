@@ -19,6 +19,16 @@ an account is optional and only adds backup and cross-device sync — and the
 server behind that sync is this same repository, so you can run your own
 instead of trusting someone else's.
 
+<p align="center">
+  <a href="docs/promo/lift-promo.mp4">
+    <img src="docs/promo/poster.png" alt="Play the one-minute tour of Lift" width="720">
+  </a>
+</p>
+
+<p align="center">
+  <sub>A one-minute tour, with sound. GitHub opens it in a player.</sub>
+</p>
+
 ## Screens
 
 | Home | Logging a session | Calendar |
@@ -63,7 +73,7 @@ each of the eight palettes, is in [`screenshots/`](screenshots).
 - **Body tracking**, with estimated 1RM, BMI and body-fat figures.
 - **An AI coach, off by default and on your own key.** The app tells you which
   muscles are under their weekly minimum without one: that figure is arithmetic
-  over the volume landmarks and it works offline. Add an Anthropic or
+  over the volume landmarks and it works offline. Add a Claude, DeepSeek or
   OpenAI-compatible key under Settings, AI coach, and the same screens will also
   say what to change, review a block of training in a conversation you can
   follow up on, and write a few sentences on the session you just finished.
@@ -143,7 +153,8 @@ On Dokploy:
    `EXPO_PUBLIC_API_URL`, the API's public URL as the browser will call it, and
    `NEXT_PUBLIC_SITE_URL`, the landing page's own public URL. All six are
    required; the stack refuses to start without them rather than inventing
-   defaults.
+   defaults. `TELEGRAM_BOT_TOKEN` is optional and turns on the Telegram bot
+   (see [Training reports and the Telegram bot](#training-reports-and-the-telegram-bot)).
 4. Add three domains, one per service:
 
    | Service   | Port   | What it is             |
@@ -209,9 +220,11 @@ statistics screens.
 token uses and for the same reasons. It is not in `settings`, so it is not in a
 backup, and it is never rendered back into a field.
 
-**Providers.** Anthropic natively, plus anything speaking OpenAI's
+**Providers.** Anthropic and DeepSeek natively, plus anything speaking OpenAI's
 chat-completions dialect, which covers OpenAI, OpenRouter, Groq, and a local
-Ollama or LM Studio. Anthropic has its own adapter for one reason worth the
+Ollama or LM Studio. DeepSeek is that same dialect against its own host; it is
+a named entry so the address and model default to the right ones instead of
+needing to be typed. Anthropic has its own adapter for one reason worth the
 duplication: the training document is tens of thousands of tokens and every
 follow-up question re-sends it, so `cache_control` on that first message is most
 of what a second question costs.
@@ -225,6 +238,33 @@ do not align with network chunks, so the line buffering lives in
 `packages/shared/src/ai/providers.ts` as `createSseDecoder` rather than in the
 fetch loop, where it could not be tested without a socket. It is exercised at
 every chunk size from one byte up.
+
+## Training reports and the Telegram bot
+
+**The report.** Statistics opens a training report for the last week, month or
+three months: total moved, sessions, sets and reps against the period before,
+volume by day or week, top lifts, where the sets went, new records and a few
+notes worked out from the numbers. **Export PDF** turns it into a one-page,
+branded PDF and hands it to the share sheet (a download in a browser).
+
+The numbers come from `buildTrainingReport` and the page from `renderReportPdf`,
+both in `packages/shared/src/report/`. The PDF is drawn with pdf-lib in plain
+JavaScript rather than printed from HTML, because it has to come out of two
+places with no browser in common: the phone, where printing would need a native
+module and a new APK, and the API's Alpine image, where it would need Chromium.
+
+**The bot.** One Telegram bot for every user, run inside the API. Settings,
+Telegram, Connect opens a one-time `t.me` link; pressing Start there links the
+chat to the account. From then on it sends a line to get moving at the user's
+reminder time with where their week stands, last week's PDF every Monday, and
+answers `/week`, `/report`, `/streak` and `/quote` (or the same in plain words).
+No model is involved: every reply is worked out from the synced log, so the bot
+needs an account with sync on.
+
+To turn it on, create a bot with `/newbot` in [@BotFather](https://t.me/BotFather)
+and set `TELEGRAM_BOT_TOKEN` on the API. It long-polls, so there is no webhook or
+public URL to configure. Run a single API replica: two would fight over the same
+updates. Without the token the bot is off and the app's Telegram page says so.
 
 ## Over-the-air updates
 

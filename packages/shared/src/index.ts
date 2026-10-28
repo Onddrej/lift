@@ -12,6 +12,7 @@ export * from './measurements.ts';
 export * from './ordering.ts';
 export * from './plates.ts';
 export * from './rotation.ts';
+export * from './session-insights.ts';
 export * from './supersets.ts';
 export * from './sync.ts';
 export * from './warmup.ts';

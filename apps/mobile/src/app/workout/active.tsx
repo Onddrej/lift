@@ -46,7 +46,14 @@ import { clearSessionNotice, prepareLiveNotice } from '@/features/notifications/
 import { ExerciseDemoSheet } from '@/features/exercises/exercise-demo-sheet';
 import { ExerciseBlock } from '@/features/workouts/exercise-block';
 import { CollapsedLift, SupersetGroup } from '@/features/workouts/collapsed-lift';
-import { defaultExpandedUnit, groupLiftUnits } from '@/features/workouts/lift-units';
+import { resolveExerciseUnits, useAppUnits } from '@/features/exercises/units';
+import {
+  defaultExpandedUnit,
+  groupLiftUnits,
+  unitIsComplete,
+  unitSetProgress,
+} from '@/features/workouts/lift-units';
+import { describeNextSet, nextOpenSet } from '@/features/workouts/next-set';
 import { ghostFill, pairedPreviousSet } from '@/features/workouts/previous';
 import {
   cancelRestNotification,
@@ -791,6 +798,61 @@ export default function ActiveWorkoutScreen() {
       ? expandedId
       : (defaultExpandedUnit(units)?.id ?? null);
 
+  /*
+   * The set the session is waiting on: the first open one in the lift that is
+   * open on screen.
+   *
+   * Read from the open unit rather than from the whole session, because that is
+   * where the user's eye is. Someone who reaches down and opens the superset
+   * before finishing the bench has told the screen what they are doing next,
+   * and an outline left behind on the bench would be arguing with them. When
+   * the open lift is finished there is no next set in it.
+   *
+   * With every lift folded (the last set of one was just checked off) the
+   * session is still waiting on something: the first unfinished lift, so the
+   * rest bar can keep naming it while the user decides what to open.
+   */
+  const openUnit =
+    units.find((unit) => unit.id === openUnitId) ?? units.find((unit) => !unitIsComplete(unit));
+  const nextUp = openUnit ? nextOpenSet(openUnit) : undefined;
+  const nextSetId = nextUp?.set.id ?? null;
+
+  const appUnits = useAppUnits();
+  const restSetId = useTimer((state) => state.restSourceSetId);
+
+  /*
+   * The rest bar's "Next" line, which names the row with the outline on it.
+   *
+   * Null is "there is no next set", and the bar says so in words rather than
+   * going blank: the last set of the session is worth acknowledging, and an
+   * empty line under the clock would read as the bar failing to load.
+   */
+  const nextUpLabel = useMemo(() => {
+    if (!nextUp) return null;
+
+    const resting = details.find((detail) =>
+      detail.sets.some((set) => set.id === restSetId),
+    );
+    const previous = pairedPreviousSet(
+      nextUp.detail.sets,
+      previousByExercise[nextUp.detail.exercise.id]?.sets,
+      nextUp.set,
+    );
+
+    return describeNextSet(
+      nextUp,
+      previous,
+      resolveExerciseUnits(nextUp.detail.exercise, appUnits),
+      resting?.workoutExercise.id === nextUp.detail.workoutExercise.id,
+    );
+  }, [nextUp, details, restSetId, previousByExercise, appUnits]);
+
+  // One segment per lift for the progress line, in the order they are listed.
+  const progressSegments = useMemo(
+    () => units.map((unit) => ({ id: unit.id, ...unitSetProgress(unit) })),
+    [units],
+  );
+
   const applySupersets = useCallback(
     (writes: SupersetAssignment[]) => {
       if (writes.length === 0) return;
@@ -1076,6 +1138,7 @@ export default function ActiveWorkoutScreen() {
         startedAt={workout.startedAt}
         completedSets={completedSets}
         totalSets={totalSets}
+        segments={progressSegments}
         onOpenSummary={() => {
           haptics.selection();
           setInsightsOpen(true);
@@ -1143,6 +1206,7 @@ export default function ActiveWorkoutScreen() {
                 previousSets={previousByExercise[detail.exercise.id]?.sets ?? []}
                 previousNote={previousByExercise[detail.exercise.id]?.note ?? null}
                 recordSetIds={recordSetIds}
+                nextSetId={nextSetId}
                 superset={placements.get(detail.workoutExercise.id)}
                 onOpenDemo={() =>
                   setDemo({
@@ -1304,7 +1368,7 @@ export default function ActiveWorkoutScreen() {
 
       {/* After the scroll, not before it: the bar is docked over the list now
           rather than sitting above it, so it has to paint last. */}
-      <RestTimerBar onExpand={() => setTimerSheetOpen(true)} />
+      <RestTimerBar nextUp={nextUpLabel} onExpand={() => setTimerSheetOpen(true)} />
 
       {/*
        * Over the rest bar, and only while it is falling.
@@ -1427,18 +1491,20 @@ function SessionStats({
   startedAt,
   completedSets,
   totalSets,
+  segments,
   onOpenSummary,
 }: {
   startedAt: Date;
   completedSets: number;
   totalSets: number;
+  segments: readonly ProgressSegmentModel[];
   onOpenSummary: () => void;
 }) {
   const colors = useColors();
 
   return (
     <View>
-      <SessionProgress completed={completedSets} total={totalSets} />
+      <SessionProgress segments={segments} />
 
       {/*
         `accessible={false}`, and nothing accessible inside it.
@@ -1523,24 +1589,59 @@ function Elapsed({ startedAt }: { startedAt: Date }) {
   );
 }
 
+interface ProgressSegmentModel {
+  id: string;
+  done: number;
+  total: number;
+}
+
 /**
- * Sets completed, drawn as a line.
+ * Sets completed, drawn as one segment per lift.
+ *
+ * It was a single line, which answered "how far through am I" and nothing
+ * else. Split by lift, and each segment sized by its own set count, the same
+ * 3pt strip also says how many lifts are left and how big each of them is, and
+ * the one being worked is the segment that is part-filled.
+ *
+ * Finished lifts drop out of the accent into `textTertiary`. They are done and
+ * the screen has nothing more to say about them, which is the rule the set rows
+ * follow too: what has been done goes quiet, and the accent stays on what is
+ * still to do. A session's worth of lime segments would otherwise be the
+ * loudest thing on screen by its last exercise, exactly when it matters least.
+ */
+function SessionProgress({ segments }: { segments: readonly ProgressSegmentModel[] }) {
+  return (
+    <View
+      style={styles.progressRow}
+      // The fraction directly below states this, and a screen reader announcing
+      // the same progress twice in two forms is noise rather than access.
+      accessibilityElementsHidden
+      importantForAccessibility="no-hide-descendants"
+    >
+      {segments.map((segment) => (
+        <ProgressSegment key={segment.id} done={segment.done} total={segment.total} />
+      ))}
+    </View>
+  );
+}
+
+/**
+ * One lift's share of the line.
  *
  * Slid rather than scaled or widened, which is the same technique, and the
- * same reasoning: as the rest timer's track: `scaleX` grows from the centre
- * and needs a `transformOrigin` not every surface honours, and animating
- * `width` puts a layout pass on the UI thread's critical path once a set. A
- * full-width layer translated out to the left is the same picture with neither
- * problem, and the left edge stays put while the right edge does the moving.
+ * same reasoning, as the rest timer's track: `scaleX` grows from the centre and
+ * needs a `transformOrigin` not every surface honours, and animating `width`
+ * puts a layout pass on the UI thread's critical path once a set. A full-width
+ * layer translated out to the left is the same picture with neither problem.
  *
- * It moves twice a set at most, so unlike the rest bar there is no ticker here:
- * the value changes only when a check plate does.
+ * It moves twice a set at most, so there is no ticker here: the value changes
+ * only when a check plate does.
  */
-function SessionProgress({ completed, total }: { completed: number; total: number }) {
+function ProgressSegment({ done, total }: { done: number; total: number }) {
   const colors = useColors();
   const [trackWidth, setTrackWidth] = useState(0);
 
-  const progress = total > 0 ? Math.min(1, completed / total) : 0;
+  const progress = total > 0 ? Math.min(1, done / total) : 0;
   const filled = useSharedValue(progress);
 
   useEffect(() => {
@@ -1551,18 +1652,25 @@ function SessionProgress({ completed, total }: { completed: number; total: numbe
     transform: [{ translateX: -(1 - filled.value) * trackWidth }],
   }));
 
+  const complete = total > 0 && done >= total;
+
   return (
     <View
-      style={[styles.progressTrack, { backgroundColor: colors.surfaceMuted }]}
+      // An empty lift still takes a sliver, so adding an exercise with no sets
+      // yet shows up on the line rather than appearing only once it has one.
+      style={[
+        styles.progressTrack,
+        { flexGrow: Math.max(total, 1), backgroundColor: colors.surfaceMuted },
+      ]}
       onLayout={(event) => setTrackWidth(event.nativeEvent.layout.width)}
-      // The fraction directly below states this, and a screen reader announcing
-      // the same progress twice in two forms is noise rather than access.
-      accessibilityElementsHidden
-      importantForAccessibility="no-hide-descendants"
     >
       {trackWidth > 0 && (
         <Animated.View
-          style={[styles.progressFill, fillStyle, { backgroundColor: colors.accent }]}
+          style={[
+            styles.progressFill,
+            fillStyle,
+            { backgroundColor: complete ? colors.textTertiary : colors.accent },
+          ]}
         />
       )}
     </View>
@@ -1579,7 +1687,9 @@ const styles = StyleSheet.create({
    * what makes it the session's line rather than a divider: every other
    * element on this screen sits inside the 16pt margin.
    */
+  progressRow: { flexDirection: 'row', gap: 2 },
   progressTrack: {
+    flexBasis: 0,
     height: 3,
     overflow: 'hidden',
   },

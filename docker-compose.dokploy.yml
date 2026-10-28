@@ -42,6 +42,9 @@ services:
       # that is not listed is rejected before it reaches a handler, which reads
       # as a broken sign-in rather than as a missing setting.
       TRUSTED_ORIGINS: ${TRUSTED_ORIGINS:-lift://}
+      # Optional. The Telegram bot's token from @BotFather; empty leaves the bot
+      # off and the app hides its page.
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       PORT: 3000
     expose:
       - '3000'

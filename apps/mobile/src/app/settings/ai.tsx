@@ -177,8 +177,9 @@ export default function AiSettingsScreen() {
             onPress={() => setEditing('model')}
           />
           {/*
-           * Anthropic has one address. Offering a field to change it would be
-           * offering a way to break the only path that needs no configuration.
+           * Claude and DeepSeek each have one address. Offering a field to
+           * change it would be offering a way to break the only paths that
+           * need no configuration.
            */}
           {provider === 'openai-compatible' && (
             <>
@@ -218,7 +219,7 @@ export default function AiSettingsScreen() {
           goes only to the address above.
           {provider === 'openai-compatible'
             ? ' Any server speaking the OpenAI chat format works here, including OpenRouter and a local Ollama or LM Studio, which keeps the whole thing on your own machine.'
-            : ' Requests go straight to api.anthropic.com.'}
+            : ` Requests go straight to ${DEFAULT_BASE_URLS[provider].replace('https://', '')}.`}
         </Footnote>
 
         <Card padded={false} style={settingsStyles.sectionStacked}>

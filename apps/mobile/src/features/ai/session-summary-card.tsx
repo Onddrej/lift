@@ -15,8 +15,9 @@
  *   than paying for a second opinion on the same sets.
  */
 
-import { SESSION_BRIEF } from '@lift/shared';
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Ionicons } from '@expo/vector-icons';
+import { parseDebrief, SESSION_BRIEF, type DebriefLabel } from '@lift/shared';
+import { useCallback, useEffect, useRef, useState, type ComponentProps } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Button, Card, Text } from '@/components/ui';
@@ -25,9 +26,9 @@ import { AiError } from './errors';
 import { buildSessionDocument } from './session-summary';
 import { appendMessage, createThread, findThreadFor, readMessages } from './threads';
 import { useSettings } from '@/store/settings';
-import { spacing } from '@/theme';
+import { spacing, useColors } from '@/theme';
 
-/** Three or four sentences. The brief says so; this stops a model disagreeing. */
+/** Four short lines. The brief says so; this stops a model disagreeing. */
 const MAX_OUTPUT_TOKENS = 400;
 
 export function SessionSummaryCard({ workoutId }: { workoutId: string }) {
@@ -158,7 +159,7 @@ export function SessionSummaryCard({ workoutId }: { workoutId: string }) {
       </Text>
 
       {summary ? (
-        <Text variant="body">{summary}</Text>
+        <Debrief text={summary} streaming={pending} />
       ) : pending ? (
         <Text variant="body" color="textTertiary">
           Reading the session…
@@ -169,7 +170,7 @@ export function SessionSummaryCard({ workoutId }: { workoutId: string }) {
         </Text>
       ) : (
         <Text variant="body" color="textSecondary">
-          A few sentences on what moved, what stalled, and what this session did to the week.
+          What went well, what to watch, and what to do next time.
         </Text>
       )}
 
@@ -187,7 +188,60 @@ export function SessionSummaryCard({ workoutId }: { workoutId: string }) {
   );
 }
 
+/**
+ * The answer, as labelled rows when it came back in the shape the brief asks
+ * for and as the paragraph it is otherwise.
+ *
+ * The fallback is not only for a model that ignored the format. Every summary
+ * stored before the brief changed is a paragraph, and it is read back from the
+ * thread exactly as it was written.
+ */
+function Debrief({ text, streaming }: { text: string; streaming: boolean }) {
+  const colors = useColors();
+  const debrief = parseDebrief(text, { partial: streaming });
+
+  if (!debrief) return <Text variant="body">{text}</Text>;
+
+  return (
+    <View collapsable={false} style={styles.debrief}>
+      <Text variant="bodyMedium">{debrief.headline}</Text>
+      {debrief.lines.map((line) => {
+        const look = LINE_LOOK[line.label];
+        return (
+          <View key={line.label} style={styles.line}>
+            <Ionicons name={look.icon} size={16} color={colors[look.ink]} style={styles.lineIcon} />
+            <View style={styles.lineBody}>
+              <Text variant="overline" color={look.ink}>
+                {line.label}
+              </Text>
+              <Text variant="body">{line.text}</Text>
+            </View>
+          </View>
+        );
+      })}
+    </View>
+  );
+}
+
+/**
+ * One icon and one ink per label. "Watch" is the warning role rather than
+ * danger, for the reason the summary screen gives for its trend colours: a
+ * stalled lift is a fact to act on, not a failure state.
+ */
+const LINE_LOOK: Record<
+  DebriefLabel,
+  { icon: ComponentProps<typeof Ionicons>['name']; ink: 'success' | 'warning' | 'accent' }
+> = {
+  'Went well': { icon: 'trending-up', ink: 'success' },
+  Watch: { icon: 'eye-outline', ink: 'warning' },
+  'Next time': { icon: 'arrow-forward-circle-outline', ink: 'accent' },
+};
+
 const styles = StyleSheet.create({
   card: { gap: spacing.sm },
   action: { alignItems: 'flex-start', paddingTop: spacing.xs },
+  debrief: { gap: spacing.md },
+  line: { flexDirection: 'row', gap: spacing.sm },
+  lineIcon: { marginTop: 2 },
+  lineBody: { flex: 1, gap: 2 },
 });

@@ -6,5 +6,6 @@
 
 export * from './advisor.ts';
 export * from './briefs.ts';
+export * from './coach-chat.ts';
 export * from './messages.ts';
 export * from './providers.ts';
